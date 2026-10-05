@@ -1,0 +1,240 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="dark light">
+    <title>Karaokê — Controle</title>
+    <link rel="icon" href="data:,">
+    <link rel="stylesheet" href="/static/css/tokens.css">
+    <link rel="stylesheet" href="/static/css/base.css">
+    <link rel="stylesheet" href="/static/css/control.css">
+    <script src="/static/js/control/theme-boot.js"></script>
+    <script type="module" src="/static/js/control/main.js"></script>
+  </head>
+  <body class="page-control">
+    <a class="skip-link" href="#main">Pular para o conteúdo</a>
+    <div class="app" id="control">
+      <header class="header">
+        <div class="logo">
+          <span
+            class="logo-mark"><svg class="icon" aria-hidden="true"><use href="/static/icons.svg#i-mic" /></svg></span>
+          <span class="txt">Karaokê</span>
+        </div>
+        <form class="search header-search" id="search-form" role="search" autocomplete="off">
+          <svg class="icon" aria-hidden="true">
+            <use href="/static/icons.svg#i-search" />
+          </svg>
+          <label class="sr-only" for="q">Buscar música no YouTube</label>
+          <input
+            class="input"
+            id="q"
+            type="search"
+            name="q"
+            maxlength="200"
+            enterkeyhint="search"
+            placeholder="Buscar música no YouTube (artista, título)…"
+            aria-keyshortcuts="/"
+          >
+          <span class="kbd" aria-hidden="true">/</span>
+        </form>
+        <div class="header-actions">
+          <button
+            class="btn btn-secondary"
+            id="btn-stage-top"
+            type="button"
+            aria-label="Abrir Palco"
+            title="Abre /stage em nova janela — arraste para a TV e pressione F"
+          >
+            <svg class="icon" aria-hidden="true"><use href="/static/icons.svg#i-screen" /></svg><span class="txt"
+            >Abrir Palco</span>
+          </button>
+          <button
+            class="btn btn-ghost btn-icon"
+            id="btn-settings"
+            type="button"
+            aria-label="Configurações"
+            title="Configurações"
+            aria-haspopup="dialog"
+          >
+            <svg class="icon" aria-hidden="true">
+              <use href="/static/icons.svg#i-gear" />
+            </svg>
+          </button>
+          <button class="btn btn-ghost btn-icon" id="btn-theme" type="button" aria-label="Alternar tema"
+            title="Tema">
+            <svg class="icon" aria-hidden="true">
+              <use href="/static/icons.svg#i-sun" />
+            </svg>
+          </button>
+        </div>
+      </header>
+
+      <main class="main" id="main" tabindex="-1">
+        <div class="banners" id="banners" aria-live="polite"></div>
+
+        <section class="panel panel-main" aria-label="Busca e biblioteca">
+          <div class="tabs" id="main-tabs" role="tablist" aria-label="Buscar ou Biblioteca">
+            <button
+              class="tab"
+              role="tab"
+              type="button"
+              id="tab-search"
+              aria-selected="true"
+              aria-controls="pane-search"
+            >
+              <svg class="icon" aria-hidden="true"><use href="/static/icons.svg#i-search" /></svg>Buscar
+            </button>
+            <button
+              class="tab"
+              role="tab"
+              type="button"
+              id="tab-lib"
+              aria-selected="false"
+              aria-controls="pane-lib"
+              tabindex="-1"
+            >
+              <svg class="icon" aria-hidden="true"><use href="/static/icons.svg#i-music" /></svg>Biblioteca
+              <span class="chip chip-neutral tnum" id="lib-count" hidden>0</span>
+            </button>
+          </div>
+          <div id="pane-search" role="tabpanel" aria-labelledby="tab-search" class="panel-body"
+            aria-live="polite"></div>
+          <div id="pane-lib" role="tabpanel" aria-labelledby="tab-lib" class="panel-body" hidden></div>
+        </section>
+
+        <aside class="side" aria-label="Processamento e fila">
+          <section class="panel" aria-labelledby="h-jobs">
+            <div class="panel-head">
+              <svg class="icon" aria-hidden="true">
+                <use href="/static/icons.svg#i-cpu" />
+              </svg>
+              <h2 id="h-jobs">Processamento</h2>
+              <span class="count tnum" id="jobs-count"></span>
+              <span class="spacer"></span>
+              <span id="dev-chip"></span>
+            </div>
+            <div class="panel-body" id="jobs" aria-live="polite"></div>
+          </section>
+          <section class="panel" aria-labelledby="h-queue">
+            <div class="panel-head">
+              <svg class="icon" aria-hidden="true">
+                <use href="/static/icons.svg#i-list" />
+              </svg>
+              <h2 id="h-queue">Fila</h2>
+              <span class="count tnum" id="queue-count"></span>
+              <span class="spacer"></span>
+              <button class="btn btn-ghost btn-sm" id="clear-queue" type="button" disabled>Limpar</button>
+            </div>
+            <div class="panel-body" id="queue"></div>
+            <p class="hint queue-hint" id="queue-hint" hidden>
+              Arraste pela alça ou foque um item e use <span class="kbd">Alt</span>+<span class="kbd">↑</span>/<span
+                class="kbd"
+              >↓</span>. <span class="kbd">Del</span> remove.
+            </p>
+          </section>
+        </aside>
+      </main>
+
+      <footer class="player" id="player" aria-label="Reprodução">
+        <div class="np" id="np"></div>
+        <div class="transport">
+          <div class="btns">
+            <button
+              class="btn btn-ghost btn-icon btn-round"
+              id="btn-prev"
+              type="button"
+              aria-label="Anterior / reiniciar"
+              title="Anterior / reiniciar"
+              disabled
+            >
+              <svg class="icon" aria-hidden="true">
+                <use href="/static/icons.svg#i-prev" />
+              </svg>
+            </button>
+            <button class="btn btn-play" id="btn-play" type="button" aria-label="Tocar" disabled>
+              <svg class="icon icon-lg" aria-hidden="true">
+                <use href="/static/icons.svg#i-play" />
+              </svg>
+            </button>
+            <button
+              class="btn btn-ghost btn-icon btn-round"
+              id="btn-next"
+              type="button"
+              aria-label="Próxima"
+              title="Próxima"
+              disabled
+            >
+              <svg class="icon" aria-hidden="true">
+                <use href="/static/icons.svg#i-next" />
+              </svg>
+            </button>
+            <button
+              class="btn btn-ghost btn-icon btn-round toggle"
+              id="btn-auto"
+              type="button"
+              aria-pressed="true"
+              aria-label="Auto-avanço"
+              title="Auto-avanço: ao terminar, toca a próxima da fila"
+            >
+              <svg class="icon icon-sm" aria-hidden="true">
+                <use href="/static/icons.svg#i-refresh" />
+              </svg>
+            </button>
+          </div>
+          <div class="seek tnum">
+            <span id="pos">0:00</span>
+            <label class="sr-only" for="seek">Posição na música</label>
+            <input id="seek" type="range" min="0" max="1" step="1000" value="0" disabled>
+            <span id="dur">0:00</span>
+          </div>
+        </div>
+        <div class="player-extra">
+          <div class="mix">
+            <label
+              for="vol"><svg class="icon icon-sm" aria-hidden="true"><use href="/static/icons.svg#i-vol" /></svg
+              >Volume</label>
+            <input id="vol" type="range" min="0" max="100" step="1" value="80">
+            <output class="tnum" id="vol-out" for="vol">80%</output>
+            <label
+              for="guide"><svg class="icon icon-sm" aria-hidden="true"><use href="/static/icons.svg#i-mic" /></svg
+              >Voz guia</label>
+            <input id="guide" class="guide" type="range" min="0" max="100" step="5" value="0">
+            <output class="tnum" id="guide-out" for="guide">0%</output>
+            <button class="btn btn-ghost lbl-off" id="btn-lyrics" type="button"
+              title="Gerir a letra da música atual" disabled>
+              <svg class="icon icon-sm" aria-hidden="true"><use href="/static/icons.svg#i-lyrics" /></svg>Letra
+            </button>
+            <div class="offset" role="group" aria-label="Offset da letra">
+              <button id="off-minus" type="button" aria-label="Letra 50 ms mais cedo"
+                title="Letra mais cedo ( [ )" disabled>
+                −
+              </button>
+              <output class="tnum" id="off-out" aria-live="polite">0 ms</output>
+              <button id="off-plus" type="button" aria-label="Letra 50 ms mais tarde"
+                title="Letra mais tarde ( ] )" disabled>
+                +
+              </button>
+            </div>
+            <button
+              class="btn btn-ghost btn-icon np-edit"
+              id="btn-sync-edit"
+              type="button"
+              aria-label="Editar sincronia da música atual"
+              title="Editar sincronia (E)"
+              aria-keyshortcuts="E"
+              disabled
+            >
+              <svg class="icon icon-sm" aria-hidden="true">
+                <use href="/static/icons.svg#i-edit-time" />
+              </svg>
+            </button>
+          </div>
+        </div>
+      </footer>
+    </div>
+
+    <div class="toasts" id="toasts" aria-live="polite"></div>
+    <div id="modal-root"></div>
+  </body>
+</html>

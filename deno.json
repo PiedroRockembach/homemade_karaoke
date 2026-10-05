@@ -1,0 +1,12 @@
+{
+  "lint": {
+    "include": ["karaoke/web/"],
+    "rules": { "tags": ["recommended"] }
+  },
+  "fmt": {
+    "include": ["karaoke/web/"],
+    "exclude": ["karaoke/web/css/tokens.css"],
+    "lineWidth": 110,
+    "indentWidth": 2
+  }
+}

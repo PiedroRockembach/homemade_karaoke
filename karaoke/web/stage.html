@@ -1,0 +1,329 @@
+<!doctype html>
+<html lang="pt-BR" data-theme="dark">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="dark">
+    <title>Karaokê — Palco</title>
+    <link rel="icon" href="data:,">
+    <link rel="stylesheet" href="/static/css/tokens.css">
+    <link rel="stylesheet" href="/static/css/base.css">
+    <link rel="stylesheet" href="/static/css/stage.css">
+    <script type="module" src="/static/js/stage/main.js"></script>
+  </head>
+  <body class="page-stage">
+    <!-- Ícones (set próprio, traço 2 px, grade 24) — copiados do protótipo. -->
+    <svg class="sprite" aria-hidden="true" focusable="false">
+      <symbol id="i-play" viewBox="0 0 24 24">
+        <path d="M7 4.5v15l12-7.5z" fill="currentColor" />
+      </symbol>
+      <symbol id="i-pause" viewBox="0 0 24 24">
+        <rect x="6" y="4.5" width="4" height="15" rx="1" fill="currentColor" />
+        <rect x="14" y="4.5" width="4" height="15" rx="1" fill="currentColor" />
+      </symbol>
+      <symbol id="i-next" viewBox="0 0 24 24">
+        <path d="M5 5v14l10-7z" fill="currentColor" />
+        <path d="M19 5v14" />
+      </symbol>
+      <symbol id="i-prev" viewBox="0 0 24 24">
+        <path d="M19 5v14L9 12z" fill="currentColor" />
+        <path d="M5 5v14" />
+      </symbol>
+      <symbol id="i-vol" viewBox="0 0 24 24">
+        <path d="M4 9v6h4l5 4V5L8 9z" />
+        <path d="M16.5 8.5a5 5 0 0 1 0 7M19 6a8.5 8.5 0 0 1 0 12" />
+      </symbol>
+      <symbol id="i-mic" viewBox="0 0 24 24">
+        <rect x="9" y="3" width="6" height="11" rx="3" />
+        <path d="M5 11a7 7 0 0 0 14 0M12 18v3" />
+      </symbol>
+      <symbol id="i-refresh" viewBox="0 0 24 24">
+        <path d="M20 11a8 8 0 0 0-14.5-4.5L4 8M4 4v4h4M4 13a8 8 0 0 0 14.5 4.5L20 16M20 20v-4h-4" />
+      </symbol>
+      <symbol id="i-screen" viewBox="0 0 24 24">
+        <rect x="3" y="4" width="18" height="12" rx="2" />
+        <path d="M8 20h8M12 16v4" />
+      </symbol>
+      <symbol id="i-alert" viewBox="0 0 24 24">
+        <path d="M12 3 2 20h20z" />
+        <path d="M12 10v4M12 17.5v.01" />
+      </symbol>
+      <symbol id="i-music" viewBox="0 0 24 24">
+        <path d="M9 18V5l11-2v13" />
+        <circle cx="6" cy="18" r="3" />
+        <circle cx="17" cy="16" r="3" />
+      </symbol>
+      <symbol id="i-lyrics" viewBox="0 0 24 24">
+        <path d="M4 6h16M4 10h12M4 14h16M4 18h9" />
+      </symbol>
+      <symbol id="i-key" viewBox="0 0 24 24">
+        <rect x="2" y="6" width="20" height="12" rx="2" />
+        <path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M7 14h10" />
+      </symbol>
+      <symbol id="i-wifi-off" viewBox="0 0 24 24">
+        <path
+          d="M2 8.5a15 15 0 0 1 4-2.4M10 5.1a15 15 0 0 1 12 3.4M5 12a10 10 0 0 1 3.5-2M15 10.3a10 10 0 0 1 4 1.7M8.5 15.5a5 5 0 0 1 7 0M12 19h.01M3 3l18 18"
+        />
+      </symbol>
+      <symbol id="i-user" viewBox="0 0 24 24">
+        <circle cx="12" cy="8" r="4" />
+        <path d="M4 21a8 8 0 0 1 16 0" />
+      </symbol>
+      <symbol id="i-skip" viewBox="0 0 24 24">
+        <path d="M5 5l10 7-10 7zM19 5v14" />
+      </symbol>
+      <symbol id="i-expand" viewBox="0 0 24 24">
+        <path d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5" />
+      </symbol>
+    </svg>
+
+    <main class="stage" id="stage" tabindex="-1" aria-label="Palco do karaokê">
+      <div class="stage-bg" data-bg aria-hidden="true"></div>
+      <div class="stage-bg" data-bg aria-hidden="true"></div>
+      <div class="stage-vig" aria-hidden="true"></div>
+
+      <!-- Início: o navegador exige um gesto para liberar o som -->
+      <section class="scene" data-scene="start" aria-label="Início">
+        <div class="spot a" aria-hidden="true"></div>
+        <div class="spot b" aria-hidden="true"></div>
+        <div class="center">
+          <div class="s-logo">
+            <span class="logo-mark"><svg class="icon"><use href="#i-mic" /></svg></span>Karaokê
+          </div>
+          <p class="s-big pulse">Pressione <span class="s-key">Enter</span> para começar</p>
+          <p class="s-meta" data-start-queue></p>
+          <p class="s-meta s-note">O navegador só libera o som depois de uma tecla.</p>
+        </div>
+      </section>
+
+      <!-- Espera: fila vazia / fim da fila -->
+      <section class="scene" data-scene="idle" aria-label="Fila vazia">
+        <div class="spot a" aria-hidden="true"></div>
+        <div class="spot b" aria-hidden="true"></div>
+        <div class="spot c" aria-hidden="true"></div>
+        <div class="center">
+          <div class="s-logo">
+            <span class="logo-mark"><svg class="icon"><use href="#i-mic" /></svg></span>Karaokê
+          </div>
+          <p class="s-big">Quem canta primeiro?</p>
+          <p class="s-mid">
+            A fila está vazia. No PC, abra o Controle,<br>busque uma música e clique em <b class="hl">Preparar e
+              enfileirar</b>.
+          </p>
+          <p class="s-meta tnum">
+            Controle: <b class="hl" data-origin>http://127.0.0.1:8765</b> · <span class="s-key">?</span> atalhos
+          </p>
+        </div>
+      </section>
+
+      <!-- Tocando / Pausado / Espelho / Letra indisponível -->
+      <section class="scene" data-scene="play" aria-label="Tocando">
+        <div class="s-top">
+          <div class="s-song">
+            <div class="t" data-song-title></div>
+            <div class="a" data-song-artist></div>
+            <div class="s-singer" data-song-singer hidden>
+              <svg class="icon" aria-hidden="true"><use href="#i-user" /></svg><span></span>
+            </div>
+          </div>
+          <div class="s-next" data-next hidden>
+            <div class="lbl">A seguir</div>
+            <div class="t" data-next-title></div>
+            <div data-next-singer></div>
+          </div>
+        </div>
+        <div class="lyrics" data-lyrics aria-hidden="true"></div>
+        <div class="nolyrics-box">
+          <div class="err-ico muted" aria-hidden="true">
+            <svg class="icon">
+              <use href="#i-lyrics" />
+            </svg>
+          </div>
+          <p class="s-big s-big-sm">Letra indisponível</p>
+          <p class="s-meta">
+            Curta o instrumental — ou, no Controle, abra <b class="hl">Letra › Colar LRC</b> ou <b class="hl">Gerar com
+              Whisper</b>.
+          </p>
+        </div>
+        <div class="s-bottom tnum">
+          <span data-time-cur>0:00</span>
+          <div class="s-prog"><i data-prog></i></div>
+          <span data-time-dur>0:00</span>
+        </div>
+      </section>
+
+      <!-- Carregando -->
+      <section class="scene" data-scene="loading" aria-label="Carregando">
+        <div class="center">
+          <div class="loader" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></div>
+          <p class="s-mid" data-loading-title>Carregando…</p>
+          <p class="s-meta" data-loading-singer></p>
+        </div>
+      </section>
+
+      <!-- A seguir (automático ou manual) -->
+      <section class="scene" data-scene="upnext" aria-label="A seguir">
+        <div class="center">
+          <div class="upnext">
+            <div class="art-lg">
+              <img data-up-art alt="" hidden>
+              <div class="art-ph" data-up-ph aria-hidden="true">
+                <svg class="icon">
+                  <use href="#i-music" />
+                </svg>
+              </div>
+            </div>
+            <div class="up-text">
+              <div class="lbl">A seguir</div>
+              <h2 data-up-title></h2>
+              <div class="a" data-up-artist></div>
+              <div class="s-singer s-singer-lg" data-up-singer hidden>
+                <svg class="icon" aria-hidden="true"><use href="#i-user" /></svg><span></span>
+              </div>
+            </div>
+            <div class="ring" data-ring role="timer" aria-label="Começa em segundos">
+              <svg viewBox="0 0 100 100" aria-hidden="true">
+                <circle class="ring-track" cx="50" cy="50" r="44" />
+                <circle class="ring-arc" data-ring-arc cx="50" cy="50" r="44" />
+              </svg>
+              <span class="tnum" data-ring-num>8</span>
+            </div>
+          </div>
+          <div class="hint-row" data-up-hints-auto>
+            <span><span class="s-key">Enter</span> começar agora</span>
+            <span><span class="s-key">A</span> pausar auto-avanço</span>
+            <span><span class="s-key">N</span> pular</span>
+          </div>
+          <div class="hint-row" data-up-hints-manual hidden>
+            <span class="hl"><span class="s-key">Enter</span> quando estiver pronto</span>
+            <span><span class="s-key">A</span> ligar auto-avanço</span>
+            <span><span class="s-key">N</span> pular</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- Próxima ainda processando -->
+      <section class="scene" data-scene="prep" aria-label="Aguardando preparo">
+        <div class="spot a" aria-hidden="true"></div>
+        <div class="spot b" aria-hidden="true"></div>
+        <div class="center">
+          <p class="s-meta s-eyebrow">Quase lá</p>
+          <p class="s-big" data-prep-title></p>
+          <p class="s-mid" data-prep-stage></p>
+          <div class="prep">
+            <div class="s-prog" data-prep-bar><i data-prep-fill></i></div>
+            <p class="s-meta tnum" data-prep-meta></p>
+          </div>
+          <div class="hint-row"><span><span class="s-key">N</span> pular para a próxima pronta</span></div>
+        </div>
+      </section>
+
+      <!-- Erro ao tocar -->
+      <section class="scene" data-scene="error" aria-label="Erro">
+        <div class="center">
+          <div class="err-ico" aria-hidden="true">
+            <svg class="icon">
+              <use href="#i-alert" />
+            </svg>
+          </div>
+          <p class="s-big">Não deu para tocar esta música</p>
+          <p class="s-mid">
+            <span data-error-msg></span><br>
+            <span data-error-auto>Pulando para a próxima em <b class="hl tnum" data-error-count>5 s</b>…</span>
+            <span data-error-wait hidden>Esperando aqui. Pressione <b class="hl">Enter</b> para pular.</span>
+          </p>
+          <div class="hint-row">
+            <span><span class="s-key">Enter</span> pular agora</span>
+            <span data-error-space><span class="s-key">Espaço</span> esperar aqui</span>
+          </div>
+        </div>
+      </section>
+
+      <div class="stage-badges">
+        <div class="paused-pill">
+          <svg class="icon" aria-hidden="true"><use href="#i-pause" /></svg>Pausado · <span class="s-key">Espaço</span>
+          continua
+        </div>
+        <div class="mirror-pill" title="Outro Palco está tocando o som">
+          <svg class="icon" aria-hidden="true"><use href="#i-screen" /></svg>Modo espelho — o som sai no outro Palco ·
+          <span class="s-key">Enter</span> tocar aqui
+        </div>
+        <div class="conn-pill" role="status">
+          <svg class="icon" aria-hidden="true"><use href="#i-wifi-off" /></svg>Sem conexão com o servidor —
+          tentando de novo…
+        </div>
+      </div>
+
+      <div class="hud" role="status" aria-live="polite">
+        <svg class="icon" aria-hidden="true">
+          <use data-hud-icon href="#i-vol" />
+        </svg>
+        <span data-hud-label>Volume</span>
+        <span class="bar" data-hud-bar><i data-hud-fill></i></span>
+        <b class="tnum" data-hud-value></b>
+      </div>
+
+      <div class="sr-only" role="status" aria-live="polite" data-announce></div>
+
+      <div class="help" data-help role="dialog" aria-modal="true" aria-labelledby="help-title" hidden
+        tabindex="-1">
+        <div class="help-card">
+          <h2 id="help-title">
+            <svg class="icon" aria-hidden="true"><use href="#i-key" /></svg>Atalhos do Palco
+          </h2>
+          <dl>
+            <div>
+              <dt><span class="s-key">Espaço</span></dt>
+              <dd>Tocar / pausar</dd>
+            </div>
+            <div>
+              <dt><span class="s-key">Enter</span></dt>
+              <dd>Começar · confirmar · tocar aqui</dd>
+            </div>
+            <div>
+              <dt><span class="s-key">←</span><span class="s-key">→</span></dt>
+              <dd>Voltar / avançar 5 s</dd>
+            </div>
+            <div>
+              <dt><span class="s-key">↑</span><span class="s-key">↓</span></dt>
+              <dd>Volume ±5%</dd>
+            </div>
+            <div>
+              <dt><span class="s-key">N</span></dt>
+              <dd>Próxima música</dd>
+            </div>
+            <div>
+              <dt><span class="s-key">P</span></dt>
+              <dd>Reiniciar (2× anterior)</dd>
+            </div>
+            <div>
+              <dt><span class="s-key">−</span><span class="s-key">+</span></dt>
+              <dd>Voz guia ±10%</dd>
+            </div>
+            <div>
+              <dt><span class="s-key">V</span></dt>
+              <dd>Voz guia liga/desliga</dd>
+            </div>
+            <div>
+              <dt><span class="s-key">[</span><span class="s-key">]</span></dt>
+              <dd>Letra adianta / atrasa 50 ms</dd>
+            </div>
+            <div>
+              <dt><span class="s-key">A</span></dt>
+              <dd>Auto-avanço liga/desliga</dd>
+            </div>
+            <div>
+              <dt><span class="s-key">F</span></dt>
+              <dd>Tela cheia</dd>
+            </div>
+            <div>
+              <dt><span class="s-key">?</span></dt>
+              <dd>Mostrar/ocultar atalhos</dd>
+            </div>
+          </dl>
+          <p class="foot"><span class="s-key">Esc</span> fecha esta tela (ou sai da tela cheia)</p>
+        </div>
+      </div>
+    </main>
+  </body>
+</html>

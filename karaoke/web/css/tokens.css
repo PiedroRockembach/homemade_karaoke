@@ -1,0 +1,259 @@
+/* ==========================================================================
+   Karaokê local — design tokens
+   Fonte única de valores visuais. O frontend importa este arquivo.
+   Autor: ux-designer · Ciclo 20261003-2339-karaoke
+   Direção: "palco noturno" — índigo profundo, magenta de destaque, ciano de luz.
+
+   Temas:
+     - Padrão: escuro (o Palco é sempre escuro).
+     - Controle: segue prefers-color-scheme, sobrescrito por [data-theme="light|dark"]
+       no <html>.
+   Contrastes verificados (WCAG 2.x) estão listados em docs/DESIGN.md §7.
+   ========================================================================== */
+
+:root {
+  color-scheme: dark;
+
+  /* ---------- Paleta bruta (não use direto em componentes) ---------- */
+  --indigo-950: #07050f;
+  --indigo-900: #0e0b1a;
+  --indigo-850: #17132a;
+  --indigo-800: #211b3a;
+  --indigo-700: #342c55;
+  --indigo-600: #6e6496;
+  --indigo-300: #b3abd1;
+  --indigo-100: #f4f1ff;
+  --magenta-400: #ff4d94;
+  --magenta-700: #c2185b;
+  --cyan-300: #4fddff;
+  --cyan-700: #0067a3;
+
+  /* ---------- Cores semânticas (tema escuro — padrão) ---------- */
+  --color-bg: #0e0b1a;              /* fundo da página */
+  --color-surface: #17132a;         /* cards, painéis */
+  --color-surface-2: #211b3a;       /* camada elevada: inputs, itens hover, modais */
+  --color-surface-3: #2a2348;       /* hover sobre surface-2 */
+  --color-border: #342c55;          /* divisórias (decorativo) */
+  --color-border-strong: #6e6496;   /* borda de componentes interativos (3.38:1) */
+  --color-text: #f4f1ff;            /* 16.2:1 sobre surface */
+  --color-text-muted: #b3abd1;      /* 8.3:1 sobre surface */
+  --color-text-subtle: #8f87b0;     /* legendas terciárias (5.4:1 surface) */
+
+  --color-accent: #ff4d94;          /* ação primária, seleção, marca */
+  --color-accent-hover: #ff6ba7;
+  --color-accent-active: #e83a80;
+  --color-on-accent: #1a0612;       /* texto sobre accent (6.25:1) */
+  --color-accent-soft: rgb(255 77 148 / 0.14); /* fundo de chip/selecionado */
+
+  --color-info: #4fddff;            /* luz de palco: progresso, links, foco */
+  --color-info-soft: rgb(79 221 255 / 0.12);
+  --color-success: #3ddc97;
+  --color-success-soft: rgb(61 220 151 / 0.14);
+  --color-warning: #ffc24b;
+  --color-warning-soft: rgb(255 194 75 / 0.14);
+  --color-danger: #ff6b7a;
+  --color-danger-soft: rgb(255 107 122 / 0.14);
+  --color-on-danger: #1f0508;
+
+  --color-focus: #4fddff;           /* anel de foco (12.1:1 sobre bg) */
+  --color-overlay: rgb(7 5 15 / 0.72);  /* fundo de modais */
+  --color-skeleton: #2a2348;
+  --color-skeleton-shine: #3a3160;
+
+  /* Gradiente de marca (logo, barra de progresso do palco) */
+  --gradient-brand: linear-gradient(90deg, #ff4d94 0%, #b05cff 50%, #4fddff 100%);
+
+  /* ---------- Tipografia ---------- */
+  /* Fontes de sistema: nada a vendorizar, zero rede. */
+  --font-sans: system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans", Cantarell,
+    "Helvetica Neue", Arial, sans-serif;
+  --font-mono: ui-monospace, "SFMono-Regular", "JetBrains Mono", "DejaVu Sans Mono",
+    Menlo, Consolas, monospace;
+
+  /* Escala Controle (razão ~1.25, base 16px) */
+  --text-xs: 0.75rem;    /* 12 — legendas, badges */
+  --text-sm: 0.875rem;   /* 14 — metadados */
+  --text-md: 1rem;       /* 16 — corpo */
+  --text-lg: 1.125rem;   /* 18 — título de card */
+  --text-xl: 1.375rem;   /* 22 — título de seção */
+  --text-2xl: 1.75rem;   /* 28 — título de tela */
+  --text-3xl: 2.25rem;   /* 36 — estado vazio */
+
+  --weight-regular: 400;
+  --weight-medium: 500;
+  --weight-semibold: 600;
+  --weight-bold: 700;
+  --weight-black: 800;
+
+  --leading-tight: 1.2;
+  --leading-normal: 1.5;
+  --tracking-caps: 0.06em;
+
+  /* ---------- Espaçamento (base 4px) ---------- */
+  --space-0: 0;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 48px;
+  --space-16: 64px;
+
+  /* ---------- Forma ---------- */
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 16px;
+  --radius-xl: 24px;
+  --radius-pill: 999px;
+
+  --border-width: 1px;
+  --focus-ring: 0 0 0 2px var(--color-bg), 0 0 0 4px var(--color-focus);
+
+  --shadow-1: 0 1px 2px rgb(0 0 0 / 0.4);
+  --shadow-2: 0 4px 16px rgb(0 0 0 / 0.45);
+  --shadow-3: 0 12px 40px rgb(0 0 0 / 0.55);
+  --glow-accent: 0 0 24px rgb(255 77 148 / 0.35);
+
+  /* ---------- Tamanhos ---------- */
+  --control-h: 40px;        /* altura mínima de botão/input (alvo ≥ 40px) */
+  --control-h-lg: 48px;
+  --icon-sm: 16px;
+  --icon-md: 20px;
+  --icon-lg: 24px;
+  --thumb-w: 120px;         /* thumbnail 16:9 nos resultados */
+  --thumb-w-sm: 64px;       /* thumbnail na fila/biblioteca */
+  --header-h: 64px;
+  --player-h: 88px;
+  --sidebar-w: 380px;
+  --content-max: 1440px;
+  /* v0.2 — editor de sincronia (ciclo 20261004-1742) */
+  --editor-max: 1280px;     /* largura máx. do editor (modal em tela cheia) */
+  --waveform-h: 112px;      /* forma de onda (janela de 10 s) */
+  --overview-h: 28px;       /* faixa de visão geral da música inteira */
+  --mark-pad-h: 136px;      /* botão grande "Marcar" do modo tocar e marcar */
+  --sync-row-h: 48px;       /* linha da lista de letras no editor */
+
+  /* ---------- Movimento ---------- */
+  --duration-instant: 80ms;   /* feedback de press */
+  --duration-fast: 150ms;     /* hover, foco */
+  --duration-base: 220ms;     /* troca de estado, toasts */
+  --duration-slow: 400ms;     /* troca de linha no palco */
+  --duration-scene: 700ms;    /* troca de cena no palco */
+  --ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+
+  --z-player: 20;
+  --z-header: 30;
+  --z-modal: 50;
+  --z-toast: 60;
+
+  /* ---------- Palco (/stage) — sempre escuro, escala em vh ---------- */
+  --stage-bg: #07050f;
+  --stage-bg-blur: 48px;                     /* blur da thumbnail de fundo */
+  --stage-bg-overlay: rgb(7 5 15 / 0.78);    /* garante ≥ 6.7:1 até sobre thumb branca */
+  --stage-vignette: radial-gradient(ellipse at center, transparent 40%, rgb(7 5 15 / 0.6) 100%);
+  --stage-text: #ffffff;                     /* letra não cantada */
+  --stage-text-sung: #4fddff;                /* letra já cantada (preenchimento) */
+  --stage-text-next: #cfc8ea;                /* próxima linha */
+  --stage-text-meta: #b9b1d9;                /* título/artista/cantor */
+  --stage-accent: #ff4d94;
+  --stage-shadow: 0 0.25vh 1.2vh rgb(0 0 0 / 0.65);   /* text-shadow da letra */
+
+  --stage-font: var(--font-sans);
+  --stage-line-current: clamp(2.5rem, 7.5vh, 9rem);   /* ≥ 5vh (AC-06.1) */
+  --stage-line-next: clamp(1.75rem, 4.6vh, 5.5rem);
+  --stage-title: clamp(1.5rem, 4vh, 4.5rem);
+  --stage-meta: clamp(1rem, 2.6vh, 3rem);
+  --stage-countdown: clamp(4rem, 18vh, 20rem);
+  --stage-hud: clamp(1rem, 2.8vh, 3rem);
+  --stage-pad: clamp(1.5rem, 5vh, 6rem);
+  --stage-line-gap: 3vh;
+  --stage-progress-h: 0.8vh;
+}
+
+/* ---------- Tema claro (só Controle) ---------- */
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    color-scheme: light;
+    --color-bg: #f7f5fc;
+    --color-surface: #ffffff;
+    --color-surface-2: #efebf8;
+    --color-surface-3: #e5dff3;
+    --color-border: #e2dcf0;
+    --color-border-strong: #8c84a8;
+    --color-text: #1a1530;
+    --color-text-muted: #5a5378;
+    --color-text-subtle: #6f6890;
+    --color-accent: #c2185b;
+    --color-accent-hover: #a8124d;
+    --color-accent-active: #8f0e41;
+    --color-on-accent: #ffffff;
+    --color-accent-soft: rgb(194 24 91 / 0.10);
+    --color-info: #00739e;
+    --color-info-soft: rgb(0 115 158 / 0.10);
+    --color-success: #13784a;
+    --color-success-soft: rgb(19 120 74 / 0.10);
+    --color-warning: #8f5b00;
+    --color-warning-soft: rgb(143 91 0 / 0.10);
+    --color-danger: #c42536;
+    --color-danger-soft: rgb(196 37 54 / 0.10);
+    --color-on-danger: #ffffff;
+    --color-focus: #0067a3;
+    --color-overlay: rgb(26 21 48 / 0.45);
+    --color-skeleton: #ebe6f5;
+    --color-skeleton-shine: #f6f3fb;
+    --shadow-1: 0 1px 2px rgb(26 21 48 / 0.08);
+    --shadow-2: 0 4px 16px rgb(26 21 48 / 0.10);
+    --shadow-3: 0 12px 40px rgb(26 21 48 / 0.16);
+    --glow-accent: none;
+  }
+}
+:root[data-theme="light"] {
+  color-scheme: light;
+  --color-bg: #f7f5fc;
+  --color-surface: #ffffff;
+  --color-surface-2: #efebf8;
+  --color-surface-3: #e5dff3;
+  --color-border: #e2dcf0;
+  --color-border-strong: #8c84a8;
+  --color-text: #1a1530;
+  --color-text-muted: #5a5378;
+  --color-text-subtle: #6f6890;
+  --color-accent: #c2185b;
+  --color-accent-hover: #a8124d;
+  --color-accent-active: #8f0e41;
+  --color-on-accent: #ffffff;
+  --color-accent-soft: rgb(194 24 91 / 0.10);
+  --color-info: #00739e;
+  --color-info-soft: rgb(0 115 158 / 0.10);
+  --color-success: #13784a;
+  --color-success-soft: rgb(19 120 74 / 0.10);
+  --color-warning: #8f5b00;
+  --color-warning-soft: rgb(143 91 0 / 0.10);
+  --color-danger: #c42536;
+  --color-danger-soft: rgb(196 37 54 / 0.10);
+  --color-on-danger: #ffffff;
+  --color-focus: #0067a3;
+  --color-overlay: rgb(26 21 48 / 0.45);
+  --color-skeleton: #ebe6f5;
+  --color-skeleton-shine: #f6f3fb;
+  --shadow-1: 0 1px 2px rgb(26 21 48 / 0.08);
+  --shadow-2: 0 4px 16px rgb(26 21 48 / 0.10);
+  --shadow-3: 0 12px 40px rgb(26 21 48 / 0.16);
+  --glow-accent: none;
+}
+/* [data-theme="dark"] usa os valores padrão de :root (nada a redefinir). */
+
+/* ---------- Movimento reduzido ---------- */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --duration-instant: 0ms;
+    --duration-fast: 0ms;
+    --duration-base: 0ms;
+    --duration-slow: 0ms;
+    --duration-scene: 0ms;
+  }
+}
