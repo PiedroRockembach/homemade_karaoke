@@ -118,6 +118,9 @@ def _make_server(uvicorn_config: Any, app: Any) -> Any:
             bus = getattr(app.state, "bus", None)
             if bus is not None:
                 bus.close_all()
+            guest = getattr(app.state, "guest", None)
+            if guest is not None:  # v0.3: o listener da LAN também para (ADR-0003 §1)
+                guest.request_stop()
 
     return KaraokeServer(uvicorn_config)
 

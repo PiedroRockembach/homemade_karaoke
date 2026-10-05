@@ -35,7 +35,17 @@ def test_hello_snapshot(live, readers):
     client.post("/api/queue", json={"song_id": SONG_A, "singer": "Ana"})
     r = open_reader(readers, base, "c_ctrl1")
     hello, _ = r.next("hello")
-    assert set(hello) == {"server_time", "client_id", "player", "queue", "jobs", "settings", "system"}
+    assert set(hello) == {
+        "server_time",
+        "client_id",
+        "player",
+        "queue",
+        "jobs",
+        "settings",
+        "system",
+        "guest_state",
+    }
+    assert hello["guest_state"]["enabled"] is False  # v0.3: começa desligado (AC-11.5)
     assert hello["client_id"] == "c_ctrl1"
     assert abs(hello["server_time"] - time.time() * 1000) < 5000
     assert hello["player"]["status"] == "waiting_gesture"
@@ -132,7 +142,10 @@ def test_job_events_refresh_queue(live, readers):
 
 def test_invalid_role(live):
     _, client, _ = live
-    assert client.get("/api/events?role=guest").status_code == 400
+    # v0.3: role=guest existe, mas é exclusivo de convidados (host → 403 forbidden)
+    r = client.get("/api/events?role=guest")
+    assert r.status_code == 403 and r.json()["error"]["code"] == "forbidden"
+    assert client.get("/api/events?role=admin").status_code == 400
     assert client.get("/api/events?client_id=bad id").status_code == 400
 
 

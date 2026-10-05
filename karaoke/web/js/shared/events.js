@@ -7,7 +7,9 @@
  *   reconectamos com backoff.
  * - A fábrica do EventSource pode ser trocada (`setEventSourceFactory`) — usado só pelo mock `?mock=1`.
  *
- * Dono: frontend-engineer (T-007). Reutilizado pelo Controle (T-008).
+ * Dono: frontend-engineer (T-007). Reutilizado pelo Controle (T-008) e pela página /guest (v0.3, T-006):
+ * `connectEvents({role: "guest", ...})`; ao receber `guest.ended`, a página deve chamar `close()` (senão o
+ * backoff reconecta e recebe 401).
  */
 
 export const EVENT_TYPES = [
@@ -24,6 +26,8 @@ export const EVENT_TYPES = [
   "settings.updated",
   "system.updated",
   "toast",
+  "guest.state", // v0.3: só host (control/stage)
+  "guest.ended", // v0.3: só convidado; o servidor fecha o stream logo depois
 ];
 
 const STORAGE_KEY = "karaoke.client_id";
@@ -62,7 +66,7 @@ export function setEventSourceFactory(fn) {
 
 /**
  * Abre a conexão SSE.
- * @param {{role: "control"|"stage", clientId: string,
+ * @param {{role: "control"|"stage"|"guest", clientId: string,
  *          onEvent: (type: string, data: any) => void,
  *          onStatus?: (status: "connecting"|"open"|"reconnecting") => void}} opts
  * @returns {{close: () => void}}

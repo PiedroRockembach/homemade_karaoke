@@ -1,5 +1,7 @@
 /**
  * Aba Buscar (US-01/US-02): busca no YouTube (`GET /api/search`), estados vazio/carregando/erro/sucesso,
+ * busca enquanto digita (FIX-004, DECISION 0019: ~700 ms após a última tecla, ≥ 3 caracteres, abort da
+ * anterior, Enter imediato; 429 mantém os resultados e tenta de novo sozinho),
  * chips Pronta/Processando/Vídeo longo/Ao vivo atualizados ao vivo pelos eventos de job e biblioteca.
  * v0.2 (T-003): botão split "Preparar e enfileirar ▾" com o modo de letra desta música (DESIGN §11.3) e chip
  * removível "Letra: <modo> ✕" quando difere do padrão.
@@ -13,16 +15,23 @@ import { resultRow, resultsSkeleton, updateResultRow } from "../shared/component
 import { enqueueSong, prepareAndEnqueue, prepareOnly } from "./actions.js";
 import { openMenu } from "./menu.js";
 import { defaultMode, LYRICS_MODES } from "./settings.js";
+import { charCount, cleanQuery, createLiveSearch } from "../shared/live-search.js";
 
 const SUGGESTIONS = ["Sucessos dos anos 80", "MPB para cantar junto", "Rock nacional"];
 const SKELETON_DELAY_MS = 150;
+const YT_DELAY_MS = 700; // busca depois da última tecla (DECISION 0019)
+const YT_MIN_CHARS = 3;
+const MAX_CHARS = 200;
 
-const state = { query: "", mode: "empty", results: [], error: null, seq: 0 };
+const state = { query: "", mode: "empty", results: [], error: null, rateUntil: 0 };
 let els = {};
 let store = null;
 let goLibrary = () => {};
 /** youtube_id → modo de letra escolhido só para este resultado (null/ausente = padrão). */
 const overrides = new Map();
+let skTimer = 0;
+let rateTimer = 0;
+let live = null;
 
 export function initSearch(opts) {
   store = opts.store;
@@ -31,15 +40,41 @@ export function initSearch(opts) {
     form: document.getElementById("search-form"),
     input: document.getElementById("q"),
     pane: document.getElementById("pane-search"),
+    status: document.getElementById("search-status"),
+    busy: h("span", { class: "search-busy", id: "search-busy" }),
   };
+  live = createLiveSearch({
+    delayMs: YT_DELAY_MS,
+    minChars: YT_MIN_CHARS,
+    run: (q, signal) => api.get("/api/search" + qs({ q, limit: 15 }), { signal }),
+    onStart,
+    onResult,
+    onError,
+  });
   els.form.addEventListener("submit", (e) => {
     e.preventDefault();
     runSearch(els.input.value);
+  });
+  els.input.addEventListener("input", () => {
+    const q = cleanQuery(els.input.value);
+    if (!q) return reset();
+    if (charCount(q) > MAX_CHARS) return;
+    live.input(q);
+    if (!live.pending) {
+      // Abaixo de 3 caracteres: a busca em andamento foi cancelada.
+      settle();
+      if (state.mode === "loading") {
+        state.mode = "empty";
+        render();
+      }
+    }
+    updateBusy();
   });
   els.input.addEventListener("keydown", (e) => {
     if (e.key === "Escape" && els.input.value) {
       e.preventDefault();
       els.input.value = "";
+      reset();
     } else if (e.key === "Escape") {
       els.input.blur();
     }
@@ -56,46 +91,95 @@ export function focusSearch() {
   els.input.select();
 }
 
-export async function runSearch(text) {
-  const q = String(text || "").trim();
-  if (!q) {
-    state.mode = "empty";
-    render();
-    return;
-  }
-  if (q.length > 200) {
+/** Busca imediata (Enter, sugestões, "Tentar de novo"): cancela o debounce. */
+export function runSearch(text) {
+  const q = cleanQuery(text);
+  if (!q) return reset();
+  if (charCount(q) > MAX_CHARS) {
+    live.cancel();
     state.mode = "error";
     state.error = { code: "invalid_request", message: "A busca pode ter no máximo 200 caracteres." };
     render();
     return;
   }
   els.input.value = q;
-  state.query = q;
-  const seq = ++state.seq;
-  // Esqueleto só se demorar (evita piscar em respostas rápidas).
-  const skTimer = setTimeout(() => {
-    if (seq === state.seq) {
-      state.mode = "loading";
-      render();
-    }
-  }, SKELETON_DELAY_MS);
-  els.pane.setAttribute("aria-busy", "true");
-  try {
-    const res = await api.get("/api/search" + qs({ q, limit: 15 }));
-    if (seq !== state.seq) return;
-    state.results = res.results || [];
-    state.mode = "ok";
-  } catch (err) {
-    if (seq !== state.seq) return;
-    state.mode = "error";
-    state.error = err;
-  } finally {
-    clearTimeout(skTimer);
-    if (seq === state.seq) {
-      els.pane.removeAttribute("aria-busy");
-      render();
-    }
+  live.now(q, true);
+}
+
+/** Campo vazio: volta ao estado inicial. */
+function reset() {
+  live.cancel();
+  clearTimeout(skTimer);
+  els.pane.removeAttribute("aria-busy");
+  if (state.mode !== "empty") {
+    state.mode = "empty";
+    render();
   }
+  updateBusy();
+}
+
+function onStart(q) {
+  state.query = q;
+  els.pane.setAttribute("aria-busy", "true");
+  clearTimeout(skTimer);
+  if (state.mode === "ok" && state.results.length) {
+    updateBusy(); // mantém os resultados atuais com "buscando…"
+    return;
+  }
+  // Esqueleto só se demorar (evita piscar em respostas rápidas).
+  skTimer = setTimeout(() => {
+    state.mode = "loading";
+    render();
+  }, SKELETON_DELAY_MS);
+}
+
+function settle() {
+  clearTimeout(skTimer);
+  els.pane.removeAttribute("aria-busy");
+}
+
+function onResult(q, res) {
+  settle();
+  state.query = q;
+  state.results = res.results || [];
+  state.mode = "ok";
+  render();
+  const n = state.results.length;
+  if (els.status) {
+    els.status.textContent = n
+      ? `${n} ${n === 1 ? "resultado" : "resultados"} para “${q}”.`
+      : `Nada encontrado para “${q}”.`;
+  }
+}
+
+function onError(_q, err) {
+  settle();
+  if (err && err.code === "rate_limited") {
+    const s = Number(err.details && err.details.retry_after_s);
+    state.rateUntil = Date.now() + (Number.isFinite(s) && s > 0 ? Math.ceil(s) : 10) * 1000;
+    live.pauseUntil(state.rateUntil);
+    tickRate();
+    if (state.mode === "ok" && state.results.length) return; // mantém os resultados + dica discreta
+  }
+  state.mode = "error";
+  state.error = err;
+  render();
+}
+
+function tickRate() {
+  clearTimeout(rateTimer);
+  updateBusy();
+  if (Date.now() < state.rateUntil) rateTimer = setTimeout(tickRate, 1000);
+}
+
+/** Indicador discreto ao lado da contagem: "buscando…" ou a espera do 429. */
+function updateBusy() {
+  const left = Math.ceil((state.rateUntil - Date.now()) / 1000);
+  let text = "";
+  if (left > 0) text = `· muitas buscas seguidas — tento de novo em ${left} s`;
+  else if (live && live.pending && state.mode === "ok") text = "· buscando…";
+  els.busy.textContent = text;
+  els.busy.classList.toggle("is-busy", text === "· buscando…");
 }
 
 /** Override efetivo do resultado (some se o padrão passou a ser o mesmo modo). */
@@ -389,7 +473,8 @@ function render() {
     h(
       "p",
       { class: "hint results-count" },
-      `${n} ${n === 1 ? "resultado" : "resultados"} para “${state.query}”`,
+      `${n} ${n === 1 ? "resultado" : "resultados"} para “${state.query}” `,
+      els.busy,
     ),
     h(
       "ul",

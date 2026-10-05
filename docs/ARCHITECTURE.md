@@ -1,6 +1,6 @@
 # Arquitetura — Karaokê local
 
-> Ciclo `20261003-2339-karaoke` · Autor: architect · Base: [ADR-0001](adr/0001-stack.md) · [ADR-0002](adr/0002-guest-mode-readiness.md)
+> Ciclo `20261003-2339-karaoke` · Autor: architect · Base: [ADR-0001](adr/0001-stack.md) · [ADR-0002](adr/0002-guest-mode-readiness.md) · [ADR-0003](adr/0003-guest-mode.md) (v0.3, §11)
 > Contratos: [api.md](contracts/api.md) · [lyrics-format.md](contracts/lyrics-format.md)
 
 ## 1. Visão geral
@@ -37,8 +37,9 @@ Princípios:
 | Módulo | Responsabilidade |
 |--------|------------------|
 | `karaoke/__main__.py` | Lê config, escolhe porta (fallback com `SO_REUSEADDR`), configura `HF_HOME`/`TORCH_HOME` → `data/models`, sobe uvicorn (`KaraokeServer`, ver §8.1), abre o Controle no navegador. |
-| `karaoke/config.py` | Variáveis de ambiente e defaults (ver §8). Valida `KARAOKE_HOST` (só loopback na v1). |
-| `karaoke/security.py` | **Ponto único de autorização** (§10): `Principal`, `authorize()` (Host, Origin, papel × escopo da rota), interface `RateLimiter` (no-op na v1). |
+| `karaoke/config.py` | Variáveis de ambiente e defaults (ver §8). Valida `KARAOKE_HOST` (só loopback; a LAN abre só pelo toggle do modo convidado, §11). |
+| `karaoke/security.py` | **Ponto único de autorização** (§10, §11): `Principal` (`host`/`guest`/`anon`), `authorize()` (Host/Origin dinâmicos, papel × escopo `host`/`guest-safe`/`public`), interface `RateLimiter`. |
+| `karaoke/guest/` | v0.3 — modo convidado (§11): `service.py`, `listener.py`, `netinfo.py`, `qr.py`, `ratelimit.py`, `policy.py`; rotas em `karaoke/api/guest.py`. |
 | `karaoke/app.py` | `create_app()`: rotas, estáticos, CSP, handlers de erro no formato do contrato. |
 | `karaoke/db.py` | Conexão SQLite (WAL, `foreign_keys=ON`), migrações por `PRAGMA user_version`. |
 | `karaoke/events.py` | `EventBus` assíncrono: `publish(type, data)`; cada conexão SSE tem uma `asyncio.Queue`. Thread-safe via `loop.call_soon_threadsafe` (o JobRunner roda em thread). |
@@ -246,8 +247,9 @@ O original baixado não é mantido (instrumental + voz ≈ original); ~10 MB por
 |--------|-------------------|
 | `songs` | id (yt id) PK, title, artist, channel, duration_ms, status, error_code, lyrics_candidate_id, offset_ms, size_bytes, created_at, updated_at |
 | `lyrics_candidates` | id PK (`lrclib:<n>` · `whisper:<n>` · `manual:<n>`), song_id FK, source, meta_json, lyrics_json, created_at |
-| `jobs` | id PK, kind (process/transcribe), song_id FK, stage, stage_progress, progress, error_code, error_message, attempts, created_at, updated_at |
-| `queue_items` | id PK, song_id FK, singer, status (pending/playing/done/skipped), sort_key REAL, added_by TEXT NOT NULL DEFAULT 'host', added_at |
+| `jobs` | id PK, kind, song_id FK, stage, stage_progress, progress, options_json, error_code, error_message, attempts, requested_by (`host`/`g_<n>`), created_at, updated_at |
+| `counters` | geradores de id (`j_`, `q_`, … e, v0.3, `guest` → `g_<n>` nunca repetido entre execuções) |
+| `queue_items` | id PK, song_id FK, singer, status (pending/playing/done/skipped), sort_key REAL, added_by TEXT NOT NULL DEFAULT 'host', added_by_name TEXT (v4), added_at |
 | `player_state` | linha única: json do estado + revision |
 | `settings` | key PK, value_json |
 
@@ -256,7 +258,7 @@ O original baixado não é mantido (instrumental + voz ≈ original); ~10 MB por
 | Variável | Padrão | Descrição |
 |----------|--------|-----------|
 | `KARAOKE_PORT` | `8765` | Se ocupada, tenta as próximas 10 portas; a URL final é impressa e aberta. |
-| `KARAOKE_HOST` | `127.0.0.1` | Só loopback na v1 (outro valor aborta com mensagem clara). LAN = opt-in futuro com `KARAOKE_GUEST_MODE=1` (ADR-0002). |
+| `KARAOKE_HOST` | `127.0.0.1` | Só loopback (outro valor aborta com mensagem clara). A LAN abre só pelo toggle "Modo convidado" no Controle, em tempo de execução, nunca por variável (ADR-0003). |
 | `KARAOKE_DATA_DIR` | `./data` | Diretório de dados. |
 | `KARAOKE_DEVICE` | `auto` | `auto` \| `cuda` \| `cpu`. |
 | `KARAOKE_SEPARATION_MODEL` | `htdemucs_ft` | ou `htdemucs` (mais rápido). |
@@ -309,7 +311,8 @@ IA/YouTube/LRCLIB ficam atrás de interfaces simples para serem substituídos po
 
 ## 10. Autorização e preparação para o modo convidado ([ADR-0002](adr/0002-guest-mode-readiness.md))
 
-O modo convidado (LAN + QR, F14) **não** faz parte da v1; o esqueleto só precisa deixar os ganchos abaixo.
+> v0.3: os ganchos abaixo foram usados pelo modo convidado — ver **§11** e [ADR-0003](adr/0003-guest-mode.md). O texto
+> desta seção descreve a v1/v0.2 e continua válido, exceto onde §11 diz o contrário.
 
 **Config de host** — `config.py` expõe `host`, `port`, `allowed_hosts` (derivado: `127.0.0.1`, `localhost`, `[::1]`
 com a porta efetiva, calculada **depois** do fallback de porta) e `guest_mode=False` (fixo na v1). `__main__.py` passa
@@ -341,3 +344,50 @@ dados e callbacks (sem depender do layout do Controle) e páginas funcionam a pa
 
 **Não fazer na v1:** rotas `/api/guest/*`, página `/guest`, geração de QR, cookies, rate limit real, bind não-loopback.
 
+
+
+## 11. Modo convidado (v0.3, [ADR-0003](adr/0003-guest-mode.md))
+
+```
+ Celular (LAN)                       Processo python -m karaoke  (um loop asyncio, um app FastAPI)
+┌──────────────────┐   http://<ip-lan>:<porta>   ┌───────────────────────────────────────────────────────────┐
+│ /guest           │──────────────────────────►  │ LanListener: 2º uvicorn.Server  (só com o modo ligado)    │
+│  nome → busca →  │◄── SSE role=guest ───────── │   lifespan=off · proxy_headers=False · sem capture_signals│
+│  pedir → fila    │   cookie karaoke_guest      │                         │ mesmo app                       │
+└──────────────────┘                             │ KaraokeServer 127.0.0.1:<porta> (sempre) ◄── Controle/Palco│
+                                                 │                         ▼                                 │
+                                                 │ authorize: Host/Origin (+ip-lan se ligado) → Principal    │
+                                                 │   loopback→host · listener LAN+cookie→guest · senão anon  │
+                                                 │   escopo host|guest-safe|public · RateLimiter (buckets)   │
+                                                 │ GuestService (memória): convite(hash, 12 h, rotação),     │
+                                                 │   sessões g_<n>, GuestState → evento guest.state (host)   │
+                                                 │ guest/policy: cotas (3 pendentes, 2 preparos), duração    │
+                                                 │ EventBus.visible_to: filtro role=guest · guest.ended      │
+                                                 │ qr.py (segno → SVG) · netinfo.py (ioctl, rota padrão)     │
+                                                 └───────────────────────────────────────────────────────────┘
+```
+
+**Fluxo:** Controle `POST /api/guest/enable {address}` → `netinfo` valida o IP → `LanListener` faz o bind do socket
+(erro → `409 lan_bind_failed`) e sobe o 2º servidor → `GuestService` cria o convite → `guest.state` → o Palco mostra
+`<img src=/api/guest/qr?v=n>` entre músicas. O celular abre `/guest#t=…` → a página apaga o fragmento →
+`POST /api/guest/session` → cookie → SSE `role=guest` → busca/pedidos pelas rotas `guest-safe`.
+Desligar: modo off → `guest.ended` + `bus.close_role("guest")` → `should_exit` no listener (≤ 3 s, depois cancela).
+
+**Onde ficam os limites**
+| Limite | Onde |
+|--------|------|
+| Quem é quem (host/guest/anon), Host/Origin, escopo da rota | `security.authorize` (único) |
+| Taxa (buckets `search`/`read`/`write`/`session`/`anon`) | `guest/ratelimit.py`, chamado no passo 5 do `authorize` |
+| Cotas (3 pendentes, 2 preparos), duração ≤ 15 min, nome saneado | `guest/policy.py`, chamado pelos handlers de `queue`/`jobs`/`guest` (no-op para host) |
+| Duração real no download | `jobs/runner.py` (`options.max_duration_ms` → `video_too_long`) |
+| Conexões SSE (30 no total, 3 por convidado) e filtro de eventos | `api/events.py` + `events.visible_to` |
+| Posse (só quem adicionou remove) | `security.can_remove` (sem mudança, DECISION 0012) |
+
+**Estado:** tudo do modo convidado fica em memória (`app.state.guest`) e se perde ao reiniciar (o modo volta a
+desligado). Só persistem `queue_items.added_by`/`added_by_name` (migração v4), `jobs.requested_by` e o contador `guest`.
+
+**Encerramento:** `KaraokeServer.begin_shutdown()` → `bus.close_all()` + `guest.listener.request_stop()`; o lifespan
+(`karaoke.guest.service.shutdown`) aguarda o listener; o `hard_exit` cobre o resto (§8.1).
+
+**Testar sem celular:** abra `http://<ip-lan>:<porta>/guest#t=…` num navegador do próprio PC. O IP de origem é o da
+LAN, então a sessão é de convidado.

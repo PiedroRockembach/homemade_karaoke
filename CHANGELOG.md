@@ -2,6 +2,53 @@
 
 Formato baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Versionamento [SemVer](https://semver.org/lang/pt-BR/).
 
+## [0.3.0] — 2026-10-05
+
+Modo convidado: os convidados escaneiam um QR code na TV e pedem músicas pelo celular, na mesma rede Wi-Fi.
+
+### Adicionado
+- **Modo convidado** no Controle (card *Modo convidado*): liga e desliga sem reiniciar a app e começa sempre
+  desligado. Ao ligar, a app passa a aceitar conexões também no IP da rede local, na mesma porta. O card mostra o
+  link (com *Copiar*), quantos convidados estão conectados, um seletor de rede quando o PC tem mais de uma e uma dica
+  de firewall com o comando pronto se ninguém entrar em 60 s.
+- **QR code no Palco** entre as músicas (tela de espera, "Pressione Enter", "A seguir" e "Aguardando preparo"). Ele
+  nunca aparece durante a música.
+- **Página do convidado** (`/guest`), feita para celular, sem instalar nada: entra com o nome, busca na Biblioteca e
+  no YouTube, pede músicas para o fim da fila (o cantor pode ser outra pessoa), acompanha a fila e a música atual ao
+  vivo, vê o progresso das próprias músicas novas e remove os próprios pedidos. Funciona nos temas claro e escuro.
+- Regras para o convidado: os pedidos entram sempre no fim da fila, vídeos com mais de 15 min não podem ser pedidos e
+  há um limite de frequência (anti-spam) para buscas e requisições.
+- **"Pedido por <nome>"** na fila do Controle e no "A seguir" do Palco, e um aviso "<nome> pediu '…'" no Controle.
+- **Novo QR** troca o convite (quem já entrou continua). **Encerrar convidados** desconecta todos (os pedidos ficam
+  na fila).
+- **Busca enquanto digita**, no Controle e na página do convidado: a Biblioteca filtra na hora e o YouTube busca
+  ~0,7 s depois da última tecla (a partir de 3 letras), cancelando a busca anterior. Os resultados atuais ficam na
+  tela com "buscando…" até a nova resposta. Enter continua buscando na hora; `Esc` limpa (Controle).
+- **Tela de erro legível na página do convidado**: se a página não carregar no navegador do celular, aparece "Não
+  consegui abrir a página neste navegador" com os detalhes do erro e *Tentar de novo*, em vez de uma tela branca.
+  "Carregando…" já aparece antes do JavaScript.
+
+### Alterado
+- O anfitrião modera a fila: pode remover qualquer item, inclusive os pedidos dos convidados. Esses itens não têm
+  *Desfazer*, porque re-adicioná-los apagaria o "pedido por". Para excluir da Biblioteca uma música que um convidado
+  pediu, remova antes o pedido da fila.
+- Corpo de requisição com tamanho máximo: 16 KiB pela rede local e 8 MiB no próprio PC. Acima disso, a resposta é
+  `413`.
+- Nova dependência: `segno` (gera o QR code localmente, sem internet). O `make install` já a instala.
+- `KARAOKE_HOST` continua aceitando só `127.0.0.1`. O acesso pela rede abre apenas pelo toggle do modo convidado.
+- Limite de busca do convidado mais folgado: cerca de **30 buscas por minuto**, com rajada de 10. Ao passar do limite
+  durante a digitação, os resultados ficam, aparece "Muitas buscas — de novo em N s" e a busca se refaz sozinha.
+  Não há limite de músicas por convidado.
+
+### Problemas conhecidos
+- **Muitos convidados abrindo a página ao mesmo tempo** (N-2): com cerca de 10 celulares carregando `/guest` no mesmo
+  instante, alguns podem receber `503` e ficar com a página em branco. Basta recarregar.
+- "Trocar nome" na página do convidado é só exibição. O nome do cantor pode ser editado em cada pedido.
+- O chip "Preparando" das músicas que outra pessoa pediu aparece sem a porcentagem.
+- Herdado da v0.2: o tempo de preparo informado no README (~10–25 s com GPU) foi medido antes do alinhamento pela
+  voz com o Whisper ficar sempre ligado e não foi medido de novo.
+- Continuam valendo os problemas conhecidos da v0.2 (M-N1 e outros).
+
 ## [0.2.0] — 2026-10-05
 
 Letras no tempo certo: texto oficial, tempos tirados da voz e um editor de sincronia.

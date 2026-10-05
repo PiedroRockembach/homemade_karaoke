@@ -2,7 +2,10 @@
  * Store simples alimentado pelo `hello` e pelos eventos SSE (contrato §10).
  *
  * Forma do estado:
- *   { connection, clientId, serverSkewMs, player, queue, jobs: {[id]: Job}, settings, system }
+ *   { connection, clientId, serverSkewMs, player, queue, jobs: {[id]: Job}, settings, system,
+ *     guestState, guest }
+ * v0.3: `guestState` = GuestState (host: `hello.guest_state` + evento `guest.state`; null se o backend não
+ * mandar); `guest` = GuestMe (convidado: `hello.guest`).
  * `serverSkewMs` = server_time − Date.now() no último hello (mesma máquina → ~0; usado no "A seguir").
  *
  * Dono: frontend-engineer (T-007). Reutilizado pelo Controle (T-008).
@@ -18,6 +21,8 @@ export function createStore(initial = {}) {
     jobs: {},
     settings: null,
     system: null,
+    guestState: null,
+    guest: null,
     ...initial,
   };
   const subs = new Set();
@@ -59,6 +64,8 @@ export function applyEvent(store, type, data) {
         jobs,
         settings: data.settings || null,
         system: data.system || null,
+        guestState: data.guest_state !== undefined ? data.guest_state : s.guestState,
+        guest: data.guest !== undefined ? data.guest : s.guest,
       });
       return true;
     }
@@ -110,6 +117,9 @@ export function applyEvent(store, type, data) {
       store.set(patch);
       return true;
     }
+    case "guest.state":
+      store.set({ guestState: data });
+      return true;
     case "settings.updated":
       store.set({ settings: data });
       return true;

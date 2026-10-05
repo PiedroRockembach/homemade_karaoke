@@ -72,6 +72,10 @@
       <symbol id="i-skip" viewBox="0 0 24 24">
         <path d="M5 5l10 7-10 7zM19 5v14" />
       </symbol>
+      <symbol id="i-phone" viewBox="0 0 24 24">
+        <rect x="6" y="2" width="12" height="20" rx="2.5" />
+        <path d="M11 18h2" />
+      </symbol>
       <symbol id="i-expand" viewBox="0 0 24 24">
         <path d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5" />
       </symbol>
@@ -93,6 +97,7 @@
           <p class="s-big pulse">Pressione <span class="s-key">Enter</span> para começar</p>
           <p class="s-meta" data-start-queue></p>
           <p class="s-meta s-note">O navegador só libera o som depois de uma tecla.</p>
+          <p class="s-meta guest-only">Enquanto isso, escaneie o QR e escolha sua música.</p>
         </div>
       </section>
 
@@ -106,11 +111,13 @@
             <span class="logo-mark"><svg class="icon"><use href="#i-mic" /></svg></span>Karaokê
           </div>
           <p class="s-big">Quem canta primeiro?</p>
-          <p class="s-mid">
+          <p class="s-mid guest-only">Escaneie o QR com o celular e<br>escolha sua música.</p>
+          <p class="s-meta guest-only">ou use o Controle no PC · <span class="s-key">?</span> atalhos</p>
+          <p class="s-mid guest-off">
             A fila está vazia. No PC, abra o Controle,<br>busque uma música e clique em <b class="hl">Preparar e
               enfileirar</b>.
           </p>
-          <p class="s-meta tnum">
+          <p class="s-meta tnum guest-off">
             Controle: <b class="hl" data-origin>http://127.0.0.1:8765</b> · <span class="s-key">?</span> atalhos
           </p>
         </div>
@@ -180,6 +187,9 @@
               <div class="s-singer s-singer-lg" data-up-singer hidden>
                 <svg class="icon" aria-hidden="true"><use href="#i-user" /></svg><span></span>
               </div>
+              <div class="s-by" data-up-by hidden>
+                <svg class="icon" aria-hidden="true"><use href="#i-phone" /></svg><span></span>
+              </div>
             </div>
             <div class="ring" data-ring role="timer" aria-label="Começa em segundos">
               <svg viewBox="0 0 100 100" aria-hidden="true">
@@ -238,6 +248,15 @@
           </div>
         </div>
       </section>
+
+      <!-- v0.3: QR do modo convidado, só entre músicas (js/stage/guest-qr.js) -->
+      <aside class="stage-qr" data-qr aria-hidden="true" aria-label="Convite para pedir músicas pelo celular">
+        <div class="qr-card">
+          <img data-qr-img alt="QR code do convite — aponte a câmera do celular" width="400" height="400">
+        </div>
+        <p class="qr-cap">Escaneie para escolher sua música</p>
+        <p class="qr-url tnum" data-qr-url></p>
+      </aside>
 
       <div class="stage-badges">
         <div class="paused-pill">

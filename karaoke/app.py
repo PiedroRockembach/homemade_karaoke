@@ -18,10 +18,12 @@ from fastapi import Depends, FastAPI, Request
 from fastapi.responses import FileResponse, Response
 
 from karaoke import __version__
+from karaoke.bodylimit import BodyLimitMiddleware
 from karaoke.config import WEB_DIR, Config, load_config
 from karaoke.db import Database
 from karaoke.errors import ApiError, install_error_handlers
 from karaoke.events import EventBus
+from karaoke.guest.ratelimit import TokenBucketLimiter
 from karaoke.security import authorize, scope
 
 log = logging.getLogger("karaoke")
@@ -43,6 +45,7 @@ ROUTER_MODULES = (
     "player",
     "media",
     "events",
+    "guest",  # v0.3, ADR-0003 (exceção autorizada ao "engenheiros não editam": T-003)
 )
 
 # Ordem de startup; shutdown na ordem inversa. Cada módulo pode definir startup(app) e/ou shutdown(app).
@@ -51,6 +54,7 @@ LIFECYCLE_MODULES = (
     "karaoke.services.lyrics",
     "karaoke.services.queue",
     "karaoke.services.player",
+    "karaoke.guest.service",  # v0.3: começa desligado (AC-11.5); antes do runner (ADR-0003)
     "karaoke.jobs.runner",
 )
 
@@ -119,9 +123,12 @@ def create_app(config: Config | None = None) -> FastAPI:
     app.state.config = config
     app.state.db = Database(config.db_path)
     app.state.bus = EventBus()
-    app.state.rate_limiter = None  # NoopRateLimiter na v1
+    app.state.rate_limiter = TokenBucketLimiter()  # v0.3: limites de convidado/anon (ADR-0003 §5)
 
     install_error_handlers(app)
+    # v0.3 (review-1 H-1, exceção autorizada no FIX-001): limite do corpo antes de qualquer leitura, nos dois
+    # servidores. Adicionado antes do middleware de headers, que fica por fora (o 413 também leva os headers).
+    app.add_middleware(BodyLimitMiddleware)
 
     @app.middleware("http")
     async def _security_headers(request: Request, call_next):  # noqa: ANN001, ANN202
@@ -146,7 +153,11 @@ def create_app(config: Config | None = None) -> FastAPI:
     async def stage_page() -> Response:
         return _page("stage.html")
 
-    @app.get("/static/{path:path}", include_in_schema=False, dependencies=[scope("guest-safe")])
+    @app.get("/guest", include_in_schema=False, dependencies=[scope("public")])
+    async def guest_page() -> Response:
+        return _page("guest.html")  # criado pelo bloco C; enquanto não existir → 404
+
+    @app.get("/static/{path:path}", include_in_schema=False, dependencies=[scope("public")])
     async def static_file(path: str) -> Response:
         target = _web_file(path)
         return FileResponse(

@@ -72,10 +72,11 @@ def test_prepare_and_enqueue_processing_song(client):
     assert item["ready"] is False and item["singer"] == "Bia" and item["can_remove"] is True
 
 
-def test_song_added_by_other_actor_not_removable_by_host(client, app):
+def test_song_added_by_other_actor_removable_by_host(client, app):
+    """DECISION 0006 (ciclo 20261005-0109): o host modera — pode remover o que outro ator adicionou."""
     insert_ready_song(app.state.db, added_by="guest:x")
     song = client.post("/api/jobs", json=BODY).json()["song"]
-    assert song["added_by"] == "guest:x" and song["can_remove"] is False
+    assert song["added_by"] == "guest:x" and song["can_remove"] is True
 
 
 def test_long_video_requires_confirmation(client):

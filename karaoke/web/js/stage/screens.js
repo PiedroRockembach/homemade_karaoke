@@ -6,7 +6,7 @@
  * Dono: frontend-engineer (T-007).
  */
 
-import { fmtTime } from "../shared/format.js";
+import { fmtTime, requestedByText } from "../shared/format.js";
 
 const RING_LEN = 276.46; // 2π × 44
 
@@ -50,6 +50,7 @@ export class Screens {
       upTitle: q("[data-up-title]"),
       upArtist: q("[data-up-artist]"),
       upSinger: q("[data-up-singer]"),
+      upBy: q("[data-up-by]"),
       ring: q("[data-ring]"),
       ringArc: q("[data-ring-arc]"),
       ringNum: q("[data-ring-num]"),
@@ -174,6 +175,8 @@ export class Screens {
     setText(this.el.upArtist, song ? song.artist || "" : "");
     const singer = upNext && upNext.singer;
     setPill(this.el.upSinger, singer ? `${singer}, é sua vez!` : "");
+    // v0.3 (AC-16.2): "Pedido por <nome>" quando quem pediu pelo celular não é o cantor.
+    setPill(this.el.upBy, requestedByText(upNext));
     const thumb = song && song.thumbnail;
     if (thumb && this.el.upArt.getAttribute("src") !== thumb) {
       this.el.upArt.hidden = true;

@@ -27,6 +27,7 @@ from typing import Any
 from fastapi import FastAPI
 
 from karaoke.errors import ApiError
+from karaoke.guest.policy import song_queued_by_others
 from karaoke.security import can_remove, ensure_can_remove
 
 log = logging.getLogger("karaoke")
@@ -252,6 +253,14 @@ class LibraryService:
             if row is None:
                 raise song_not_found(song_id)
             ensure_can_remove(actor, row, song_id)
+            # v0.3 (ADR-0003 §6; review-1 L-5: na mesma transação do DELETE, sem TOCTOU): itens **pendentes** de
+            # outros atores com esta música → `409 song_queued_by_others`
+            others = conn.execute(
+                "SELECT COUNT(*) FROM queue_items WHERE song_id = ? AND status = 'pending' AND added_by != ?",
+                (song_id, actor),
+            ).fetchone()[0]
+            if others:
+                raise song_queued_by_others(song_id, others)
             player = getattr(self.app.state, "player", None)
             if player is not None and player.song_in_use(song_id):
                 raise ApiError(

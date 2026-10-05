@@ -257,3 +257,15 @@
     --duration-scene: 0ms;
   }
 }
+
+/* ---------- v0.3 — Modo convidado (ciclo 20261005-0109) ---------- */
+/* Só tamanhos e as cores fixas do QR (não mudam com o tema). DESIGN §12. */
+:root {
+  --touch-min: 44px;                         /* alvo mínimo na página /guest (celular) */
+  --guest-nav-h: 64px;                       /* barra inferior do celular (+ safe-area) */
+  --guest-max: 480px;                        /* largura máx. do conteúdo /guest em telas largas */
+  --qr-light: #ffffff;                       /* fundo + zona de silêncio do QR (20.2:1) */
+  --qr-dark: #07050f;                        /* módulos do QR */
+  --stage-qr: clamp(220px, 40vh, 60vh);      /* QR na Espera / Pressione Enter (≥ 25% da altura) */
+  --stage-qr-sm: clamp(200px, 30vh, 44vh);   /* QR no A seguir / Aguardando preparo */
+}

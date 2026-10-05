@@ -21,6 +21,7 @@ from fastapi import FastAPI
 from karaoke.db import next_id, utcnow
 from karaoke.errors import ApiError, invalid_request
 from karaoke.events import Event
+from karaoke.guest import policy
 from karaoke.security import can_remove, ensure_can_remove
 from karaoke.services.library import (
     ACTIVE_JOB_STAGES,
@@ -77,6 +78,7 @@ class QueueService:
             "song": song,
             "job": job,
             "added_by": row["added_by"],
+            "added_by_name": row["added_by_name"],
             "can_remove": False,
             "added_at": row["added_at"],
         }
@@ -172,38 +174,55 @@ class QueueService:
             player.reconcile(txn)
 
     # ---- mutações (contrato §8) ----------------------------------------------------------------------
-    def add(self, song_id: str, singer: str | None, position: Any, actor: str) -> dict[str, Any]:
-        singer = clean_singer(singer)
+    def add(
+        self, song_id: str, singer: str | None, position: Any, actor: str, principal: Any = None
+    ) -> dict[str, Any]:
+        """`principal` convidado (v0.3): só `end`, `singer` padrão = nome, `added_by_name` = nome da sessão.
+        Sem cota por convidado (DECISION 0016)."""
         with transaction(self.app) as txn:
-            conn = txn.conn
-            song = load_song_row(conn, song_id)
-            if song is None:
-                raise song_not_found(song_id)
-            if song["status"] == "error":
-                raise ApiError(
-                    409,
-                    "song_not_ready",
-                    "A música falhou no processamento. Tente processá-la de novo.",
-                    {"song_id": song_id},
-                )
-            item_id = f"q_{next_id(conn, 'queue_item')}"
-            conn.execute(
-                "INSERT INTO queue_items(id, song_id, singer, status, sort_key, added_by, added_at) "
-                "VALUES (?, ?, ?, 'pending', 0, ?, ?)",
-                (item_id, song_id, singer, actor, utcnow()),
+            return self.add_in_txn(txn, song_id, singer, position, actor, principal)
+
+    def add_in_txn(
+        self, txn: Any, song_id: str, singer: str | None, position: Any, actor: str, principal: Any = None
+    ) -> dict[str, Any]:
+        """Como `add`, dentro de uma `transaction(app)` já aberta (review-1 M-2: o `POST /api/jobs` de convidado
+        cria o job e insere o item numa só transação). Os eventos saem no COMMIT de quem abriu."""
+        added_by_name = None
+        if policy.is_guest(principal):
+            policy.ensure_position_end(principal, position)
+            singer = policy.guest_singer(principal, singer)
+            added_by_name = policy.guest_name(principal)
+            actor = principal.id
+        singer = clean_singer(singer)
+        conn = txn.conn
+        song = load_song_row(conn, song_id)
+        if song is None:
+            raise song_not_found(song_id)
+        if song["status"] == "error":
+            raise ApiError(
+                409,
+                "song_not_ready",
+                "A música falhou no processamento. Tente processá-la de novo.",
+                {"song_id": song_id},
             )
-            ids = [r["id"] for r in self.pending_rows(conn) if r["id"] != item_id]
-            if position == "next":
-                index = 0
-            elif position == "end" or position is None:
-                index = len(ids)
-            else:
-                index = max(0, min(int(position), len(ids)))
-            ids.insert(index, item_id)
-            self.write_order(conn, ids)
-            txn.queue_changed = True
-            self._reconcile(txn)
-            return self.item_dict(conn, self.get_row(conn, item_id), actor)
+        item_id = f"q_{next_id(conn, 'queue_item')}"
+        conn.execute(
+            "INSERT INTO queue_items(id, song_id, singer, status, sort_key, added_by, added_by_name, added_at) "
+            "VALUES (?, ?, ?, 'pending', 0, ?, ?, ?)",
+            (item_id, song_id, singer, actor, added_by_name, utcnow()),
+        )
+        ids = [r["id"] for r in self.pending_rows(conn) if r["id"] != item_id]
+        if position == "next":
+            index = 0
+        elif position == "end" or position is None:
+            index = len(ids)
+        else:
+            index = max(0, min(int(position), len(ids)))
+        ids.insert(index, item_id)
+        self.write_order(conn, ids)
+        txn.queue_changed = True
+        self._reconcile(txn)
+        return self.item_dict(conn, self.get_row(conn, item_id), actor)
 
     def update(self, item_id: str, singer: str | None, actor: str) -> dict[str, Any]:
         singer = clean_singer(singer)
@@ -219,13 +238,14 @@ class QueueService:
                 txn.player_changed = True
             return self.item_dict(conn, self.get_row(conn, item_id), actor)
 
-    def remove(self, item_id: str, actor: str) -> None:
+    def remove(self, item_id: str, actor: str, principal: Any = None) -> None:
         with transaction(self.app) as txn:
             conn = txn.conn
             row = self.get_row(conn, item_id)
             if row is None:
                 raise item_not_found(item_id)
             ensure_can_remove(actor, row, item_id)
+            policy.ensure_guest_can_remove_item(principal, row, item_id)  # convidado: só `pending` (v0.3)
             player = getattr(self.app.state, "player", None)
             if row["status"] == "playing" and player is not None and player.involves_item(item_id):
                 player.skip_current(txn)  # remover o item atual equivale a `next`

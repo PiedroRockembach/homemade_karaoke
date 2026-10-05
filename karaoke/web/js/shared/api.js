@@ -27,8 +27,9 @@ export class ApiError extends Error {
 const NETWORK_MESSAGE = "Sem conexão com o servidor do karaokê. Verifique se ele está rodando.";
 
 /** Transporte padrão: fetch real. Retorna `{status, data}`; `data` = JSON ou null. */
-async function fetchTransport(method, path, body) {
+async function fetchTransport(method, path, body, opts = {}) {
   const init = { method, headers: { Accept: "application/json" } };
+  if (opts.signal) init.signal = opts.signal;
   if (body !== undefined) {
     init.headers["Content-Type"] = "application/json";
     init.body = JSON.stringify(body);
@@ -36,7 +37,8 @@ async function fetchTransport(method, path, body) {
   let res;
   try {
     res = await fetch(path, init);
-  } catch {
+  } catch (e) {
+    if (e && e.name === "AbortError") throw e; // cancelada por quem chamou (busca enquanto digita)
     throw new ApiError(0, "network_error", NETWORK_MESSAGE);
   }
   let data = null;
@@ -55,7 +57,7 @@ async function fetchTransport(method, path, body) {
 
 let transport = fetchTransport;
 
-/** Substitui o transporte (mock). `fn(method, path, body) → Promise<{status, data}>`. */
+/** Substitui o transporte (mock). `fn(method, path, body, opts) → Promise<{status, data}>`. */
 export function setTransport(fn) {
   transport = fn || fetchTransport;
 }
@@ -65,9 +67,10 @@ export function setTransport(fn) {
  * @param {string} method
  * @param {string} path URL relativa começando com "/"
  * @param {unknown} [body]
+ * @param {{signal?: AbortSignal}} [opts] `signal` cancela a requisição (lança `AbortError`, não `ApiError`)
  */
-export async function request(method, path, body) {
-  const { status, data } = await transport(method, path, body);
+export async function request(method, path, body, opts = {}) {
+  const { status, data } = await transport(method, path, body, opts);
   if (status >= 400 || status === 0) {
     const err = (data && data.error) || {};
     throw new ApiError(
@@ -81,7 +84,7 @@ export async function request(method, path, body) {
 }
 
 export const api = {
-  get: (path) => request("GET", path),
+  get: (path, opts) => request("GET", path, undefined, opts),
   post: (path, body = {}) => request("POST", path, body),
   put: (path, body = {}) => request("PUT", path, body),
   patch: (path, body = {}) => request("PATCH", path, body),

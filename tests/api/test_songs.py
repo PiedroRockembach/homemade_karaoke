@@ -164,16 +164,15 @@ def test_delete_song_owner_rule_two_actors(client, app, actor):
     seed_song(app, SONG_A, added_by="host")
     seed_song(app, SONG_B, added_by="guest:x")
     # can_remove calculado para o ator da requisição
-    assert client.get(f"/api/songs/{SONG_B}").json()["can_remove"] is False
+    assert client.get(f"/api/songs/{SONG_B}").json()["can_remove"] is True  # host modera
     actor.guest()
     assert client.get(f"/api/songs/{SONG_B}").json()["can_remove"] is True
     assert client.get(f"/api/songs/{SONG_A}").json()["can_remove"] is False
     # guest não remove música do host (o guest não alcança a rota host: o teste chama a política direto)
     actor.host()
-    # DECISION 0012: host não remove música adicionada pelo guest
-    r = client.delete(f"/api/songs/{SONG_B}")
-    assert r.status_code == 403 and r.json()["error"]["code"] == "not_owner"
-    assert client.get(f"/api/songs/{SONG_B}").status_code == 200
+    # DECISION 0006: o host modera — remove também a música adicionada pelo guest
+    assert client.get(f"/api/songs/{SONG_B}").json()["can_remove"] is True
+    assert client.delete(f"/api/songs/{SONG_B}").status_code == 204
     assert client.delete(f"/api/songs/{SONG_A}").status_code == 204
 
 

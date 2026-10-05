@@ -10,6 +10,7 @@ import { connectEvents, getClientId } from "../shared/events.js";
 import { applyEvent, createStore } from "../shared/state.js";
 import { h, icon, replace } from "../shared/components/dom.js";
 import { initActions } from "./actions.js";
+import { initGuestPanel, onHello as onGuestHello } from "./guest-panel.js";
 import { initJobs, loadRecentJobs, onJobEvent } from "./jobs.js";
 import { initLibrary, loadLibrary, onLibraryEvent, upsertSong } from "./library.js";
 import { initLyricsActions, onLyricsJobEvent } from "./lyrics-actions.js";
@@ -252,6 +253,7 @@ function onEvent(type, data) {
       onOffsetDetected(data);
       break;
     case "hello":
+      onGuestHello(data);
       loadLibrary();
       loadRecentJobs();
       if (data.settings) applyTheme(data.settings.theme);
@@ -347,6 +349,7 @@ function init() {
   initSyncEditor({ store });
   initSettings({ store });
   initQueue({ store });
+  initGuestPanel({ store });
   initMiniplayer({ store });
   initKeys();
   for (const id of ["btn-stage", "btn-stage-top"]) {

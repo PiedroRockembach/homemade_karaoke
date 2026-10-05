@@ -880,3 +880,150 @@
     animation: none;
   }
 }
+
+/* ======================================================================
+   v0.3 — QR do modo convidado entre músicas (DESIGN §12.5; T-005)
+   Aparece com fade (--duration-scene); some na hora (sem transição fora de .has-qr).
+   ====================================================================== */
+.stage-qr {
+  --qr-size: var(--stage-qr);
+  position: absolute;
+  top: 50%;
+  right: var(--stage-pad);
+  transform: translateY(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2.2vh;
+  max-width: calc(var(--qr-size) + 12vh);
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.stage.qr-sm .stage-qr {
+  --qr-size: var(--stage-qr-sm);
+}
+
+.stage.has-qr .stage-qr {
+  opacity: 1;
+  visibility: visible;
+  transition: opacity var(--duration-scene) var(--ease-in-out);
+}
+
+.qr-card {
+  background: var(--qr-light);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-3);
+  line-height: 0;
+  overflow: hidden;
+}
+
+.qr-card img {
+  display: block;
+  width: var(--qr-size);
+  height: var(--qr-size);
+  background: var(--qr-light);
+  image-rendering: pixelated;
+}
+
+.qr-card img.swap {
+  animation: qr-swap var(--duration-base) var(--ease-in-out);
+}
+
+@keyframes qr-swap {
+  from {
+    opacity: 0.2;
+  }
+}
+
+.qr-cap {
+  margin: 0;
+  font-size: var(--stage-title);
+  font-weight: var(--weight-bold);
+  line-height: 1.15;
+  text-align: center;
+  color: var(--stage-text);
+  text-shadow: var(--stage-shadow);
+}
+
+.qr-url {
+  margin: 0;
+  font-size: var(--stage-meta);
+  color: var(--stage-text-meta);
+  overflow-wrap: anywhere;
+  text-align: center;
+}
+
+.stage.qr-sm .qr-cap {
+  font-size: var(--stage-meta);
+}
+
+.stage.qr-sm .qr-url {
+  font-size: calc(var(--stage-meta) * 0.85);
+}
+
+/* duas colunas: o conteúdo da cena fica à esquerda do QR */
+.stage.has-qr .scene .center {
+  padding-right: calc(var(--stage-qr) + 8vh);
+}
+
+.stage.has-qr.qr-sm .scene .center {
+  padding-right: calc(var(--stage-qr-sm) + 8vh);
+}
+
+.stage.has-qr [data-scene="start"] .center,
+.stage.has-qr [data-scene="idle"] .center {
+  align-items: flex-start;
+  text-align: left;
+}
+
+/* textos alternativos da Espera / Pressione Enter */
+.guest-only {
+  display: none;
+}
+
+.stage.has-qr .guest-only {
+  display: block;
+}
+
+.stage.has-qr .guest-off {
+  display: none;
+}
+
+/* "Pedido por <nome>" no A seguir (AC-16.2) */
+.s-by {
+  display: flex;
+  align-items: center;
+  gap: 1vh;
+  margin-top: 1.5vh;
+  font-size: var(--stage-meta);
+  color: var(--stage-text-meta);
+  min-width: 0;
+}
+
+.s-by[hidden] {
+  display: none;
+}
+
+.s-by span {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.s-by .icon {
+  flex: none;
+  width: 2.6vh;
+  height: 2.6vh;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .stage.has-qr .stage-qr {
+    transition: none;
+  }
+
+  .qr-card img.swap {
+    animation: none;
+  }
+}

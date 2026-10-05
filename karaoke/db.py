@@ -179,6 +179,14 @@ MIGRATIONS: list[str] = [
     ALTER TABLE lyrics_candidates_v3 RENAME TO lyrics_candidates;
     CREATE INDEX lyrics_candidates_song ON lyrics_candidates(song_id);
     """,
+    # ---- v4: modo convidado (ciclo 20261005-0109, T-004, ADR-0003 §6) ------------------------------------
+    # Nome de quem pediu gravado no item (as sessões de convidado vivem só em memória; a fila persiste).
+    # `jobs.requested_by` já existe desde a v1 (recebe "g_<n>"). Índices para as cotas por convidado.
+    """
+    ALTER TABLE queue_items ADD COLUMN added_by_name TEXT;    -- nome do convidado no pedido; NULL = host
+    CREATE INDEX IF NOT EXISTS queue_items_added_by ON queue_items(added_by, status);
+    CREATE INDEX IF NOT EXISTS jobs_requested_by ON jobs(requested_by, stage);
+    """,
 ]
 
 SCHEMA_VERSION = len(MIGRATIONS)

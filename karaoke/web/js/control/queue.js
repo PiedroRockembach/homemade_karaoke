@@ -1,6 +1,6 @@
 /**
  * Painel Fila (US-05): reordenar (arrastar, botões ↑/↓, Alt+↑/↓), remover só se `can_remove` (toast com
- * Desfazer), limpar com confirmação, itens processando com etapa/% ao vivo.
+ * Desfazer; v0.3: o anfitrião modera e remove também pedidos de convidados, sem Desfazer — DECISION 0006), limpar com confirmação, itens processando com etapa/% ao vivo.
  * Estado vem só de `queue.updated` (SSE); a reordenação é otimista e volta à ordem do servidor em erro.
  *
  * Dono: frontend-engineer (T-008).
@@ -121,15 +121,22 @@ async function remove(item, index) {
       if (target) target.focus();
     }
     const title = (item.song && item.song.title) || item.song_id;
-    toast(`“${title}” removida da fila`, {
-      undo: async () => {
-        try {
-          await api.post("/api/queue", { song_id: item.song_id, singer: item.singer, position: index });
-        } catch (err) {
-          toastError(err);
-        }
+    // Pedido de convidado: sem Desfazer (re-adicionar pelo anfitrião perderia o "pedido por").
+    const fromGuest = Boolean(item.added_by_name);
+    toast(
+      fromGuest
+        ? `“${title}” (pedido por ${item.added_by_name}) removida da fila`
+        : `“${title}” removida da fila`,
+      {
+        undo: fromGuest ? null : async () => {
+          try {
+            await api.post("/api/queue", { song_id: item.song_id, singer: item.singer, position: index });
+          } catch (err) {
+            toastError(err);
+          }
+        },
       },
-    });
+    );
   } catch (err) {
     if (err.code === "not_owner") {
       toast("Só quem adicionou essa música pode removê-la da fila.", { level: "warning" });

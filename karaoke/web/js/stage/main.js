@@ -20,6 +20,7 @@ import { AudioEngine } from "./audio-engine.js";
 import { Hud } from "./hud.js";
 import { createKeyHandler } from "./keys.js";
 import { LyricsRenderer } from "./lyrics-renderer.js";
+import { GuestQr } from "./guest-qr.js";
 import { Screens } from "./screens.js";
 
 const TICK_MS = 500; // report tick (contrato §9: 2 Hz)
@@ -39,6 +40,7 @@ class Stage {
     this.store = createStore({ clientId: this.clientId });
     this.engine = new AudioEngine({ fetchBuffer });
     this.screens = new Screens(this.root);
+    this.guestQr = new GuestQr(this.root);
     this.hud = new Hud(this.root.querySelector(".hud"));
     this.renderer = new LyricsRenderer(this.root.querySelector("[data-lyrics]"));
     this.help = this.root.querySelector("[data-help]");
@@ -403,6 +405,7 @@ class Stage {
       nolyrics: scene === "play" && lyricsMissing,
     });
     this.screens.show(scene);
+    this.guestQr.update(s.guestState, status, scene);
   }
 
   renderPrep(s, item) {

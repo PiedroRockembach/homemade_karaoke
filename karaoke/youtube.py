@@ -12,7 +12,9 @@ import os
 import re
 import tempfile
 import threading
-from collections.abc import Callable
+import time
+from collections import OrderedDict
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -170,14 +172,80 @@ def fetch_info(youtube_id: str) -> SearchResult:
     return r
 
 
+# ---- cache de resultados (v0.3, ADR-0003 §5) ----------------------------------------------
+RECENT_TTL_S = 3600.0
+RECENT_MAX = 2000
+
+
+class RecentResults:
+    """LRU com TTL dos resultados de `GET /api/search`. Fonte dos metadados (título, duração, live) do
+    `POST /api/jobs` de convidado: o corpo da requisição dele nunca é usado para isso."""
+
+    def __init__(self, ttl_s: float = RECENT_TTL_S, max_items: int = RECENT_MAX):
+        self.ttl_s = ttl_s
+        self.max_items = max_items
+        self._items: OrderedDict[str, tuple[float, SearchResult]] = OrderedDict()
+        self._lock = threading.Lock()
+
+    def remember(self, results: Iterable[SearchResult]) -> None:
+        now = time.monotonic()
+        with self._lock:
+            for r in results:
+                self._items[r.youtube_id] = (now, r)
+                self._items.move_to_end(r.youtube_id)
+            while len(self._items) > self.max_items:
+                self._items.popitem(last=False)
+
+    def get(self, youtube_id: str) -> SearchResult | None:
+        with self._lock:
+            hit = self._items.get(youtube_id)
+            if hit is None:
+                return None
+            if time.monotonic() - hit[0] > self.ttl_s:
+                del self._items[youtube_id]
+                return None
+            self._items.move_to_end(youtube_id)
+            return hit[1]
+
+    def clear(self) -> None:
+        with self._lock:
+            self._items.clear()
+
+
+_recent = RecentResults()
+
+
+def remember_results(results: Iterable[SearchResult]) -> None:
+    _recent.remember(results)
+
+
+def recent_result(youtube_id: str) -> SearchResult | None:
+    """Resultado visto numa busca na última hora (ou None)."""
+    return _recent.get(youtube_id)
+
+
+def probe(youtube_id: str) -> SearchResult:
+    """Metadados apurados pelo servidor, sem download: cache da busca → `fetch_info`. Erros: `YoutubeError`."""
+    hit = recent_result(youtube_id)
+    if hit is not None:
+        return hit
+    info = fetch_info(youtube_id)
+    _recent.remember([info])
+    return info
+
+
 # ---- download ------------------------------------------------------------------------
 def download_audio(
     youtube_id: str,
     dest_dir: Path,
     progress: Callable[[float | None], None] | None = None,
     cancel: threading.Event | None = None,
+    max_duration_ms: int | None = None,
 ) -> Path:
-    """Baixa o melhor áudio para `dest_dir/source.<ext>`. `progress(0..1|None)`; `cancel` interrompe no próximo hook."""
+    """Baixa o melhor áudio para `dest_dir/source.<ext>`. `progress(0..1|None)`; `cancel` interrompe no próximo hook.
+
+    `max_duration_ms` (v0.3, jobs de convidado): duração real acima do limite → `YoutubeError("video_too_long")`,
+    checada pelo `match_filter` antes do download (e de novo depois, por garantia)."""
     import yt_dlp
 
     if not YOUTUBE_ID.match(youtube_id):
@@ -196,6 +264,15 @@ def download_audio(
         elif d.get("status") == "finished":
             progress(1.0)
 
+    too_long: list[int] = []
+
+    def match_filter(info: dict[str, Any], *, incomplete: bool = False) -> str | None:
+        dur = info.get("duration")
+        if max_duration_ms is not None and dur and float(dur) * 1000 > max_duration_ms:
+            too_long.append(round(float(dur) * 1000))
+            return "video_too_long"
+        return None
+
     opts = _base_opts() | {
         "format": "bestaudio/best",
         "outtmpl": {"default": str(dest_dir / "source.%(ext)s")},
@@ -205,6 +282,8 @@ def download_audio(
         "writethumbnail": False,
         "cachedir": False,
     }
+    if max_duration_ms is not None:
+        opts["match_filter"] = match_filter
     try:
         with yt_dlp.YoutubeDL(opts) as ydl:
             info = ydl.extract_info(f"https://www.youtube.com/watch?v={youtube_id}", download=True)
@@ -218,6 +297,13 @@ def download_audio(
         raise classify_error(exc) from exc
     if info and info.get("is_live"):
         raise YoutubeError("video_unavailable", "Transmissões ao vivo não podem ser processadas.")
+    real_ms = float(info["duration"]) * 1000 if info and info.get("duration") else None
+    if max_duration_ms is not None and real_ms is not None and real_ms > max_duration_ms:
+        too_long.append(round(real_ms))
+    if too_long:
+        raise YoutubeError(
+            "video_too_long", "O vídeo é mais longo do que o permitido para pedidos de convidados."
+        )
     files = sorted(p for p in dest_dir.glob("source.*") if not p.name.endswith((".part", ".ytdl")))
     if not files:
         raise YoutubeError("download_failed", "O download terminou sem gerar arquivo de áudio.")

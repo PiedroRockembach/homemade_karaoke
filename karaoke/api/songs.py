@@ -58,4 +58,5 @@ def patch_song(
 
 @router.delete("/api/songs/{song_id}", status_code=204, dependencies=[scope("host")])
 def delete_song(song_id: SongId, request: Request, actor: str = Depends(current_actor)) -> None:
+    # `409 song_queued_by_others` (v0.3) é checado dentro da transação de `library.delete` (review-1 L-5)
     request.app.state.library.delete(song_id, actor)

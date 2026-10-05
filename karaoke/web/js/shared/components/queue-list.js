@@ -3,6 +3,7 @@
  * ainda processam, alça de arrastar, ↑/↓ sempre visíveis, remover só quando `can_remove` (DECISION 0009/0012).
  * Teclado: foco no item + Alt+↑/↓ move, Del remove. Arrastar e soltar com indicador de destino.
  *
+ * v0.3: itens de convidado ganham "pedido por <nome>" (`added_by_name`, AC-16.1; `requestedBy: false` desliga).
  * Reutilizável pela futura /guest com `reorderable: false`.
  *
  * Dono: frontend-engineer (T-008).
@@ -48,6 +49,7 @@ function itemLabel(item, pos, job) {
   let label = `${pos ? pos + ". " : "Tocando agora: "}${s.title || item.song_id}`;
   if (s.artist) label += `, ${s.artist}`;
   if (item.singer) label += `, cantor ${item.singer}`;
+  if (item.added_by_name) label += `, pedido por ${item.added_by_name}`;
   if (!item.ready) label += `, ${prepLabel(item, job)}`;
   return label;
 }
@@ -60,10 +62,11 @@ function itemLabel(item, pos, job) {
  *          onMove?: (id: string, direction: "up"|"down") => void,
  *          onRemove?: (item: object, index: number) => void,
  *          onReorder?: (ids: string[]) => void,
- *          empty?: () => Node}} opts
+ *          empty?: () => Node, requestedBy?: boolean}} opts
  */
 export function renderQueueList(container, queue, opts) {
-  const { jobsBySong = {}, reorderable = true, onMove, onRemove, onReorder, empty } = opts;
+  const { jobsBySong = {}, reorderable = true, onMove, onRemove, onReorder, empty, requestedBy = true } =
+    opts;
   const current = queue && queue.current;
   const items = (queue && queue.items) || [];
   preserveFocus(container, () => {
@@ -75,14 +78,20 @@ export function renderQueueList(container, queue, opts) {
     if (current) {
       nodes.push(h("h3", { class: "q-section" }, "Tocando agora"));
       nodes.push(
-        h("div", { class: "q-now-wrap" }, buildItem(current, 0, items.length, true, jobsBySong, {})),
+        h(
+          "div",
+          { class: "q-now-wrap" },
+          buildItem(current, 0, items.length, true, jobsBySong, { requestedBy }),
+        ),
       );
     }
     if (items.length) {
       nodes.push(h("h3", { class: "q-section" }, "Próximas"));
       const ol = h("ol", { class: "list q-list" });
       items.forEach((it, i) =>
-        ol.append(buildItem(it, i, items.length, false, jobsBySong, { reorderable, onMove, onRemove }))
+        ol.append(
+          buildItem(it, i, items.length, false, jobsBySong, { reorderable, onMove, onRemove, requestedBy }),
+        )
       );
       if (reorderable && onReorder) wireDnd(ol, items, onReorder);
       nodes.push(ol);
@@ -91,7 +100,7 @@ export function renderQueueList(container, queue, opts) {
   });
 }
 
-function buildItem(item, index, total, isNow, jobsBySong, { reorderable, onMove, onRemove }) {
+function buildItem(item, index, total, isNow, jobsBySong, { reorderable, onMove, onRemove, requestedBy }) {
   const s = item.song || {};
   const job = jobsBySong[item.song_id];
   const pos = isNow ? 0 : index + 1;
@@ -147,6 +156,14 @@ function buildItem(item, index, total, isNow, jobsBySong, { reorderable, onMove,
   if (item.singer) sub.push(icon("user", "icon-sm"), h("span", { class: "q-singer" }, item.singer));
   else if (s.artist) sub.push(h("span", {}, s.artist));
   if (!item.ready) sub.push(prepChip(item, job));
+  const by = requestedBy && item.added_by_name
+    ? h(
+      "div",
+      { class: "q-by", title: `Pedido pelo celular por ${item.added_by_name}` },
+      icon("phone", "icon-sm"),
+      h("span", {}, `pedido por ${item.added_by_name}`),
+    )
+    : null;
 
   const el = h(
     isNow ? "div" : "li",
@@ -173,6 +190,7 @@ function buildItem(item, index, total, isNow, jobsBySong, { reorderable, onMove,
         s.title || item.song_id,
       ),
       h("div", { class: "q-s" }, sub),
+      by,
     ),
     h("div", { class: "q-actions" }, actions),
   );

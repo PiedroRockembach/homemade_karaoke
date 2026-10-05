@@ -1,0 +1,846 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Modo convidado — protótipo</title>
+<!-- Protótipo estático da v0.3 (DESIGN §12). Autocontido, sem rede. A barra preta do topo NÃO faz parte do produto.
+     O bloco "TOKENS" abaixo é cópia literal de design/tokens.css. JS/handlers inline só porque é protótipo (produção: CSP 'self'). -->
+<style>
+/* ===== TOKENS (cópia de design/tokens.css) ===== */
+/* ==========================================================================
+   Karaokê local — design tokens
+   Fonte única de valores visuais. O frontend importa este arquivo.
+   Autor: ux-designer · Ciclo 20261003-2339-karaoke
+   Direção: "palco noturno" — índigo profundo, magenta de destaque, ciano de luz.
+
+   Temas:
+     - Padrão: escuro (o Palco é sempre escuro).
+     - Controle: segue prefers-color-scheme, sobrescrito por [data-theme="light|dark"]
+       no <html>.
+   Contrastes verificados (WCAG 2.x) estão listados em docs/DESIGN.md §7.
+   ========================================================================== */
+
+:root {
+  color-scheme: dark;
+
+  /* ---------- Paleta bruta (não use direto em componentes) ---------- */
+  --indigo-950: #07050f;
+  --indigo-900: #0e0b1a;
+  --indigo-850: #17132a;
+  --indigo-800: #211b3a;
+  --indigo-700: #342c55;
+  --indigo-600: #6e6496;
+  --indigo-300: #b3abd1;
+  --indigo-100: #f4f1ff;
+  --magenta-400: #ff4d94;
+  --magenta-700: #c2185b;
+  --cyan-300: #4fddff;
+  --cyan-700: #0067a3;
+
+  /* ---------- Cores semânticas (tema escuro — padrão) ---------- */
+  --color-bg: #0e0b1a;              /* fundo da página */
+  --color-surface: #17132a;         /* cards, painéis */
+  --color-surface-2: #211b3a;       /* camada elevada: inputs, itens hover, modais */
+  --color-surface-3: #2a2348;       /* hover sobre surface-2 */
+  --color-border: #342c55;          /* divisórias (decorativo) */
+  --color-border-strong: #6e6496;   /* borda de componentes interativos (3.38:1) */
+  --color-text: #f4f1ff;            /* 16.2:1 sobre surface */
+  --color-text-muted: #b3abd1;      /* 8.3:1 sobre surface */
+  --color-text-subtle: #8f87b0;     /* legendas terciárias (5.4:1 surface) */
+
+  --color-accent: #ff4d94;          /* ação primária, seleção, marca */
+  --color-accent-hover: #ff6ba7;
+  --color-accent-active: #e83a80;
+  --color-on-accent: #1a0612;       /* texto sobre accent (6.25:1) */
+  --color-accent-soft: rgb(255 77 148 / 0.14); /* fundo de chip/selecionado */
+
+  --color-info: #4fddff;            /* luz de palco: progresso, links, foco */
+  --color-info-soft: rgb(79 221 255 / 0.12);
+  --color-success: #3ddc97;
+  --color-success-soft: rgb(61 220 151 / 0.14);
+  --color-warning: #ffc24b;
+  --color-warning-soft: rgb(255 194 75 / 0.14);
+  --color-danger: #ff6b7a;
+  --color-danger-soft: rgb(255 107 122 / 0.14);
+  --color-on-danger: #1f0508;
+
+  --color-focus: #4fddff;           /* anel de foco (12.1:1 sobre bg) */
+  --color-overlay: rgb(7 5 15 / 0.72);  /* fundo de modais */
+  --color-skeleton: #2a2348;
+  --color-skeleton-shine: #3a3160;
+
+  /* Gradiente de marca (logo, barra de progresso do palco) */
+  --gradient-brand: linear-gradient(90deg, #ff4d94 0%, #b05cff 50%, #4fddff 100%);
+
+  /* ---------- Tipografia ---------- */
+  /* Fontes de sistema: nada a vendorizar, zero rede. */
+  --font-sans: system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans", Cantarell,
+    "Helvetica Neue", Arial, sans-serif;
+  --font-mono: ui-monospace, "SFMono-Regular", "JetBrains Mono", "DejaVu Sans Mono",
+    Menlo, Consolas, monospace;
+
+  /* Escala Controle (razão ~1.25, base 16px) */
+  --text-xs: 0.75rem;    /* 12 — legendas, badges */
+  --text-sm: 0.875rem;   /* 14 — metadados */
+  --text-md: 1rem;       /* 16 — corpo */
+  --text-lg: 1.125rem;   /* 18 — título de card */
+  --text-xl: 1.375rem;   /* 22 — título de seção */
+  --text-2xl: 1.75rem;   /* 28 — título de tela */
+  --text-3xl: 2.25rem;   /* 36 — estado vazio */
+
+  --weight-regular: 400;
+  --weight-medium: 500;
+  --weight-semibold: 600;
+  --weight-bold: 700;
+  --weight-black: 800;
+
+  --leading-tight: 1.2;
+  --leading-normal: 1.5;
+  --tracking-caps: 0.06em;
+
+  /* ---------- Espaçamento (base 4px) ---------- */
+  --space-0: 0;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 48px;
+  --space-16: 64px;
+
+  /* ---------- Forma ---------- */
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 16px;
+  --radius-xl: 24px;
+  --radius-pill: 999px;
+
+  --border-width: 1px;
+  --focus-ring: 0 0 0 2px var(--color-bg), 0 0 0 4px var(--color-focus);
+
+  --shadow-1: 0 1px 2px rgb(0 0 0 / 0.4);
+  --shadow-2: 0 4px 16px rgb(0 0 0 / 0.45);
+  --shadow-3: 0 12px 40px rgb(0 0 0 / 0.55);
+  --glow-accent: 0 0 24px rgb(255 77 148 / 0.35);
+
+  /* ---------- Tamanhos ---------- */
+  --control-h: 40px;        /* altura mínima de botão/input (alvo ≥ 40px) */
+  --control-h-lg: 48px;
+  --icon-sm: 16px;
+  --icon-md: 20px;
+  --icon-lg: 24px;
+  --thumb-w: 120px;         /* thumbnail 16:9 nos resultados */
+  --thumb-w-sm: 64px;       /* thumbnail na fila/biblioteca */
+  --header-h: 64px;
+  --player-h: 88px;
+  --sidebar-w: 380px;
+  --content-max: 1440px;
+  /* v0.2 — editor de sincronia (ciclo 20261004-1742) */
+  --editor-max: 1280px;     /* largura máx. do editor (modal em tela cheia) */
+  --waveform-h: 112px;      /* forma de onda (janela de 10 s) */
+  --overview-h: 28px;       /* faixa de visão geral da música inteira */
+  --mark-pad-h: 136px;      /* botão grande "Marcar" do modo tocar e marcar */
+  --sync-row-h: 48px;       /* linha da lista de letras no editor */
+
+  /* ---------- Movimento ---------- */
+  --duration-instant: 80ms;   /* feedback de press */
+  --duration-fast: 150ms;     /* hover, foco */
+  --duration-base: 220ms;     /* troca de estado, toasts */
+  --duration-slow: 400ms;     /* troca de linha no palco */
+  --duration-scene: 700ms;    /* troca de cena no palco */
+  --ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+
+  --z-player: 20;
+  --z-header: 30;
+  --z-modal: 50;
+  --z-toast: 60;
+
+  /* ---------- Palco (/stage) — sempre escuro, escala em vh ---------- */
+  --stage-bg: #07050f;
+  --stage-bg-blur: 48px;                     /* blur da thumbnail de fundo */
+  --stage-bg-overlay: rgb(7 5 15 / 0.78);    /* garante ≥ 6.7:1 até sobre thumb branca */
+  --stage-vignette: radial-gradient(ellipse at center, transparent 40%, rgb(7 5 15 / 0.6) 100%);
+  --stage-text: #ffffff;                     /* letra não cantada */
+  --stage-text-sung: #4fddff;                /* letra já cantada (preenchimento) */
+  --stage-text-next: #cfc8ea;                /* próxima linha */
+  --stage-text-meta: #b9b1d9;                /* título/artista/cantor */
+  --stage-accent: #ff4d94;
+  --stage-shadow: 0 0.25vh 1.2vh rgb(0 0 0 / 0.65);   /* text-shadow da letra */
+
+  --stage-font: var(--font-sans);
+  --stage-line-current: clamp(2.5rem, 7.5vh, 9rem);   /* ≥ 5vh (AC-06.1) */
+  --stage-line-next: clamp(1.75rem, 4.6vh, 5.5rem);
+  --stage-title: clamp(1.5rem, 4vh, 4.5rem);
+  --stage-meta: clamp(1rem, 2.6vh, 3rem);
+  --stage-countdown: clamp(4rem, 18vh, 20rem);
+  --stage-hud: clamp(1rem, 2.8vh, 3rem);
+  --stage-pad: clamp(1.5rem, 5vh, 6rem);
+  --stage-line-gap: 3vh;
+  --stage-progress-h: 0.8vh;
+}
+
+/* ---------- Tema claro (só Controle) ---------- */
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    color-scheme: light;
+    --color-bg: #f7f5fc;
+    --color-surface: #ffffff;
+    --color-surface-2: #efebf8;
+    --color-surface-3: #e5dff3;
+    --color-border: #e2dcf0;
+    --color-border-strong: #8c84a8;
+    --color-text: #1a1530;
+    --color-text-muted: #5a5378;
+    --color-text-subtle: #6f6890;
+    --color-accent: #c2185b;
+    --color-accent-hover: #a8124d;
+    --color-accent-active: #8f0e41;
+    --color-on-accent: #ffffff;
+    --color-accent-soft: rgb(194 24 91 / 0.10);
+    --color-info: #00739e;
+    --color-info-soft: rgb(0 115 158 / 0.10);
+    --color-success: #13784a;
+    --color-success-soft: rgb(19 120 74 / 0.10);
+    --color-warning: #8f5b00;
+    --color-warning-soft: rgb(143 91 0 / 0.10);
+    --color-danger: #c42536;
+    --color-danger-soft: rgb(196 37 54 / 0.10);
+    --color-on-danger: #ffffff;
+    --color-focus: #0067a3;
+    --color-overlay: rgb(26 21 48 / 0.45);
+    --color-skeleton: #ebe6f5;
+    --color-skeleton-shine: #f6f3fb;
+    --shadow-1: 0 1px 2px rgb(26 21 48 / 0.08);
+    --shadow-2: 0 4px 16px rgb(26 21 48 / 0.10);
+    --shadow-3: 0 12px 40px rgb(26 21 48 / 0.16);
+    --glow-accent: none;
+  }
+}
+:root[data-theme="light"] {
+  color-scheme: light;
+  --color-bg: #f7f5fc;
+  --color-surface: #ffffff;
+  --color-surface-2: #efebf8;
+  --color-surface-3: #e5dff3;
+  --color-border: #e2dcf0;
+  --color-border-strong: #8c84a8;
+  --color-text: #1a1530;
+  --color-text-muted: #5a5378;
+  --color-text-subtle: #6f6890;
+  --color-accent: #c2185b;
+  --color-accent-hover: #a8124d;
+  --color-accent-active: #8f0e41;
+  --color-on-accent: #ffffff;
+  --color-accent-soft: rgb(194 24 91 / 0.10);
+  --color-info: #00739e;
+  --color-info-soft: rgb(0 115 158 / 0.10);
+  --color-success: #13784a;
+  --color-success-soft: rgb(19 120 74 / 0.10);
+  --color-warning: #8f5b00;
+  --color-warning-soft: rgb(143 91 0 / 0.10);
+  --color-danger: #c42536;
+  --color-danger-soft: rgb(196 37 54 / 0.10);
+  --color-on-danger: #ffffff;
+  --color-focus: #0067a3;
+  --color-overlay: rgb(26 21 48 / 0.45);
+  --color-skeleton: #ebe6f5;
+  --color-skeleton-shine: #f6f3fb;
+  --shadow-1: 0 1px 2px rgb(26 21 48 / 0.08);
+  --shadow-2: 0 4px 16px rgb(26 21 48 / 0.10);
+  --shadow-3: 0 12px 40px rgb(26 21 48 / 0.16);
+  --glow-accent: none;
+}
+/* [data-theme="dark"] usa os valores padrão de :root (nada a redefinir). */
+
+/* ---------- Movimento reduzido ---------- */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --duration-instant: 0ms;
+    --duration-fast: 0ms;
+    --duration-base: 0ms;
+    --duration-slow: 0ms;
+    --duration-scene: 0ms;
+  }
+}
+
+/* ---------- v0.3 — Modo convidado (ciclo 20261005-0109) ---------- */
+/* Só tamanhos e as cores fixas do QR (não mudam com o tema). DESIGN §12. */
+:root {
+  --touch-min: 44px;                         /* alvo mínimo na página /guest (celular) */
+  --guest-nav-h: 64px;                       /* barra inferior do celular (+ safe-area) */
+  --guest-max: 480px;                        /* largura máx. do conteúdo /guest em telas largas */
+  --qr-light: #ffffff;                       /* fundo + zona de silêncio do QR (20.2:1) */
+  --qr-dark: #07050f;                        /* módulos do QR */
+  --stage-qr: clamp(220px, 40vh, 60vh);      /* QR na Espera / Pressione Enter (≥ 25% da altura) */
+  --stage-qr-sm: clamp(200px, 30vh, 44vh);   /* QR no A seguir / Aguardando preparo */
+}
+
+/* ===== Base ===== */
+*,*::before,*::after{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--color-bg);color:var(--color-text);font:var(--text-md)/var(--leading-normal) var(--font-sans);-webkit-font-smoothing:antialiased}
+button,input,select{font:inherit;color:inherit}
+.tnum{font-variant-numeric:tabular-nums}
+.sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+.icon{width:var(--icon-md);height:var(--icon-md);fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;flex:none}
+.icon-sm{width:var(--icon-sm);height:var(--icon-sm)}
+:focus-visible{outline:none;box-shadow:var(--focus-ring)}
+.still *,.still *::before,.still *::after{animation:none!important;transition:none!important}
+@media (prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important}}
+
+/* ===== Barra do protótipo (não é produto) ===== */
+.proto{position:sticky;top:0;z-index:99;display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:8px 16px;background:#000;color:#ddd;font-size:13px}
+.proto b{color:#fff;margin-right:8px}
+.proto button,.proto select{background:#222;border:1px solid #444;border-radius:6px;padding:6px 10px;color:#eee;cursor:pointer}
+.proto button[aria-pressed=true]{background:#eee;color:#000}
+.proto .sp{flex:1}
+.view{display:none;padding:24px 16px 64px}
+.view.on{display:block}
+.view-note{max-width:960px;margin:0 auto 16px;color:var(--color-text-muted);font-size:var(--text-sm)}
+
+/* ===== Componentes compartilhados ===== */
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:var(--control-h);padding:0 16px;border-radius:var(--radius-md);border:1px solid transparent;background:transparent;font-weight:var(--weight-semibold);font-size:var(--text-sm);cursor:pointer;transition:background var(--duration-fast),transform var(--duration-instant);white-space:nowrap}
+.btn:active:not(:disabled){transform:scale(.97)}
+.btn:disabled,.btn[aria-disabled=true]{opacity:.45;cursor:not-allowed}
+.btn-primary{background:var(--color-accent);color:var(--color-on-accent)}
+.btn-primary:hover:not(:disabled){background:var(--color-accent-hover)}
+.btn-secondary{border-color:var(--color-border-strong);color:var(--color-text)}
+.btn-secondary:hover:not(:disabled){background:var(--color-surface-2)}
+.btn-ghost{color:var(--color-text-muted)}
+.btn-ghost:hover{background:var(--color-surface-2);color:var(--color-text)}
+.btn-danger{background:var(--color-danger);color:var(--color-on-danger)}
+.btn-danger-ghost{color:var(--color-danger)}
+.btn-danger-ghost:hover{background:var(--color-danger-soft)}
+.btn-icon{width:var(--control-h);padding:0}
+.btn-lg{min-height:var(--control-h-lg);font-size:var(--text-md);border-radius:var(--radius-md)}
+.spin{animation:spin 1s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.chip{display:inline-flex;align-items:center;gap:4px;height:24px;padding:0 8px;border-radius:var(--radius-pill);font-size:var(--text-xs);font-weight:var(--weight-semibold);white-space:nowrap}
+.chip .icon{width:14px;height:14px}
+.chip-success{background:var(--color-success-soft);color:var(--color-success)}
+.chip-info{background:var(--color-info-soft);color:var(--color-info)}
+.chip-warning{background:var(--color-warning-soft);color:var(--color-warning)}
+.chip-danger{background:var(--color-danger-soft);color:var(--color-danger)}
+.chip-accent{background:var(--color-accent-soft);color:var(--color-accent)}
+.chip-solid{background:var(--color-accent);color:var(--color-on-accent)}
+.chip-neutral{background:var(--color-surface-2);color:var(--color-text-muted)}
+.callout{display:flex;gap:12px;align-items:flex-start;padding:12px;border-radius:var(--radius-md);font-size:var(--text-sm);border:1px solid}
+.callout .icon{margin-top:1px}
+.callout p{margin:0}
+.callout-info{background:var(--color-info-soft);border-color:color-mix(in srgb,var(--color-info) 35%,transparent)}
+.callout-info>.icon{color:var(--color-info)}
+.callout-warning{background:var(--color-warning-soft);border-color:color-mix(in srgb,var(--color-warning) 40%,transparent)}
+.callout-warning>.icon{color:var(--color-warning)}
+.callout-danger{background:var(--color-danger-soft);border-color:color-mix(in srgb,var(--color-danger) 40%,transparent)}
+.callout-danger>.icon{color:var(--color-danger)}
+.callout .act{margin-top:8px;display:flex;gap:8px;flex-wrap:wrap}
+.field label{display:block;font-weight:var(--weight-semibold);font-size:var(--text-sm);margin-bottom:6px}
+.input{width:100%;min-height:var(--control-h-lg);padding:0 14px;border-radius:var(--radius-md);border:1px solid var(--color-border-strong);background:var(--color-surface-2);font-size:16px;transition:border-color var(--duration-fast)}
+.input:focus{outline:none;border-color:var(--color-focus);box-shadow:0 0 0 1px var(--color-focus)}
+.input[aria-invalid=true]{border-color:var(--color-danger)}
+.hint{display:flex;justify-content:space-between;gap:8px;margin-top:6px;font-size:var(--text-sm);color:var(--color-text-muted)}
+.hint.err{color:var(--color-danger)}
+.thumb{flex:none;width:var(--thumb-w-sm);aspect-ratio:16/9;border-radius:var(--radius-sm);background:var(--art,var(--color-surface-3));display:grid;place-items:center;color:var(--color-text-subtle)}
+.skel{background:linear-gradient(90deg,var(--color-skeleton) 0,var(--color-skeleton-shine) 50%,var(--color-skeleton) 100%);background-size:200% 100%;animation:shimmer 1.2s infinite;border-radius:var(--radius-sm)}
+@keyframes shimmer{to{background-position:-200% 0}}
+
+/* ===== Celular /guest ===== */
+.phones{display:flex;justify-content:center}
+.phone{--pw:390px;width:calc(var(--pw) + 20px);max-width:100%;height:800px;border:10px solid #000;border-radius:40px;overflow:hidden;box-shadow:0 20px 60px rgb(0 0 0 / .5);background:var(--color-bg);position:relative}
+.g{position:relative;height:100%;display:flex;flex-direction:column;overflow:hidden;font-size:16px}
+.g-head{flex:none;height:56px;display:flex;align-items:center;justify-content:space-between;padding:0 16px;border-bottom:1px solid var(--color-border);background:var(--color-surface)}
+.logo{display:flex;align-items:center;gap:8px;font-weight:var(--weight-black);font-size:var(--text-lg)}
+.logo-dot{width:24px;height:24px;border-radius:50%;background:var(--gradient-brand);box-shadow:var(--glow-accent)}
+.name-chip{min-height:var(--touch-min);display:flex;align-items:center;gap:6px;padding:0 12px;border-radius:var(--radius-pill);border:1px solid var(--color-border-strong);background:transparent;cursor:pointer;font-size:var(--text-sm);font-weight:var(--weight-semibold);max-width:55%}
+.name-chip span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.reconn{flex:none;display:flex;align-items:center;gap:8px;justify-content:center;height:36px;background:var(--color-info-soft);color:var(--color-text);font-size:var(--text-sm)}
+.reconn .icon{color:var(--color-info)}
+.g-main{flex:1;scrollbar-width:thin;overflow-y:auto;overscroll-behavior:contain;padding:16px 16px 24px}
+.g-main>*+*{margin-top:16px}
+.g-nav{flex:none;height:var(--guest-nav-h);display:grid;grid-template-columns:1fr 1fr;border-top:1px solid var(--color-border);background:var(--color-surface)}
+.g-tab{position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;border:0;background:none;color:var(--color-text-muted);font-size:var(--text-xs);font-weight:var(--weight-semibold);cursor:pointer;min-height:var(--touch-min)}
+.g-tab[aria-current=page]{color:var(--color-accent)}
+.g-tab[aria-current=page]::before{content:"";position:absolute;top:0;left:30%;right:30%;height:3px;border-radius:0 0 3px 3px;background:var(--color-accent)}
+.g-tab .badge{position:absolute;top:8px;left:calc(50% + 6px);min-width:18px;height:18px;padding:0 5px;border-radius:9px;background:var(--color-accent);color:var(--color-on-accent);font-size:11px;line-height:18px;text-align:center}
+.search{position:sticky;top:-16px;z-index:2;margin:-16px -16px 0;padding:12px 16px;background:var(--color-bg)}
+.search form{display:flex;gap:8px}
+.search .wrap{position:relative;flex:1}
+.search .wrap>.icon{position:absolute;left:14px;top:14px;color:var(--color-text-subtle)}
+.search .input{padding-left:44px;padding-right:44px}
+.search .clr{position:absolute;right:2px;top:2px;width:var(--touch-min);height:var(--touch-min);border:0;background:none;color:var(--color-text-muted);border-radius:var(--radius-md);cursor:pointer}
+.meter{display:flex;align-items:center;gap:10px;font-size:var(--text-sm);color:var(--color-text-muted)}
+.meter .segs{display:flex;gap:4px}
+.meter .segs i{width:22px;height:6px;border-radius:3px;background:var(--color-surface-3)}
+.meter .segs i.on{background:var(--color-accent)}
+.meter.full .segs i.on{background:var(--color-warning)}
+.meter b{color:var(--color-text)}
+.sec-h{margin:0;font-size:var(--text-xs);letter-spacing:var(--tracking-caps);text-transform:uppercase;color:var(--color-text-muted);font-weight:var(--weight-bold)}
+.list{list-style:none;margin:8px 0 0;padding:0}
+.row{display:flex;align-items:center;gap:12px;min-height:72px;padding:8px;margin:0 -8px;border-radius:var(--radius-md)}
+.row.tap{cursor:pointer}
+.row.tap:active{background:var(--color-surface-2)}
+.row .txt{flex:1;min-width:0}
+.row .t{font-weight:var(--weight-semibold);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;line-height:var(--leading-tight)}
+.row .m{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-top:4px;font-size:var(--text-sm);color:var(--color-text-muted)}
+.row .why{font-size:var(--text-xs);color:var(--color-text-muted);margin-top:2px}
+.row .btn{min-height:var(--touch-min)}
+.empty{text-align:center;padding:32px 8px}
+.empty .ring{width:72px;height:72px;border-radius:50%;margin:0 auto 16px;display:grid;place-items:center;background:var(--color-surface-2);color:var(--color-text-muted)}
+.empty .ring .icon{width:32px;height:32px}
+.empty h2{margin:0 0 8px;font-size:var(--text-xl)}
+.empty p{margin:0 auto 20px;color:var(--color-text-muted);max-width:32ch}
+.state{height:100%;display:flex;flex-direction:column;justify-content:center;padding:24px}
+.state .ring.warn{background:var(--color-warning-soft);color:var(--color-warning)}
+.state .ring.dang{background:var(--color-danger-soft);color:var(--color-danger)}
+.state .small{font-size:var(--text-sm);color:var(--color-text-subtle)}
+/* entrar */
+.join{height:100%;overflow:auto;display:flex;flex-direction:column;justify-content:center;padding:24px 20px}
+.join .logo-dot{width:64px;height:64px;margin:0 auto 16px}
+.join h1{margin:0;text-align:center;font-size:var(--text-2xl);font-weight:var(--weight-black);line-height:var(--leading-tight)}
+.join .lead{text-align:center;color:var(--color-text-muted);margin:8px 0 32px}
+.join .btn{width:100%;margin-top:20px}
+.join .priv{display:flex;gap:6px;justify-content:center;align-items:center;margin-top:16px;font-size:var(--text-xs);color:var(--color-text-subtle);text-align:center}
+/* fila */
+.now{display:flex;gap:12px;align-items:center;padding:12px;border-radius:var(--radius-lg);background:var(--color-surface-2);border-left:3px solid var(--color-info)}
+.now.mine{border-left-color:var(--color-success);box-shadow:0 0 0 1px var(--color-success) inset}
+.now .lbl{font-size:var(--text-xs);letter-spacing:var(--tracking-caps);text-transform:uppercase;color:var(--color-text-muted);font-weight:var(--weight-bold)}
+.eq{display:flex;gap:3px;align-items:flex-end;height:20px;margin-left:auto}
+.eq i{width:4px;background:var(--color-info);border-radius:2px;animation:eq 0.9s ease-in-out infinite alternate}
+.eq i:nth-child(2){animation-delay:-.3s}.eq i:nth-child(3){animation-delay:-.6s}
+@keyframes eq{from{height:4px}to{height:20px}}
+.turn{padding:14px 16px;border-radius:var(--radius-lg);background:var(--color-accent-soft);border:1px solid color-mix(in srgb,var(--color-accent) 40%,transparent)}
+.turn .k{font-size:var(--text-sm);color:var(--color-text-muted)}
+.turn .v{font-size:var(--text-xl);font-weight:var(--weight-black);margin-top:2px}
+.turn.go{background:var(--color-success-soft);border-color:color-mix(in srgb,var(--color-success) 50%,transparent)}
+.turn.go .v{color:var(--color-success)}
+.qrow{display:flex;align-items:center;gap:10px;min-height:64px;padding:8px;border-radius:var(--radius-md);border-left:3px solid transparent;transition:opacity var(--duration-base)}
+.qrow .n{width:20px;text-align:center;color:var(--color-text-subtle);font-size:var(--text-sm)}
+.qrow.mine{background:var(--color-accent-soft);border-left-color:var(--color-accent)}
+.qrow .txt{flex:1;min-width:0}
+.qrow .t{font-weight:var(--weight-semibold);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.qrow .m{display:flex;flex-wrap:wrap;gap:6px;align-items:center;font-size:var(--text-sm);color:var(--color-text-muted);margin-top:2px}
+.qrow .m .when{color:var(--color-text);font-weight:var(--weight-semibold)}
+.bar{height:6px;border-radius:3px;background:var(--color-surface-3);overflow:hidden;margin-top:6px}
+.bar i{display:block;height:100%;background:var(--color-info);border-radius:3px}
+.qrow .del{width:var(--touch-min);height:var(--touch-min);flex:none}
+.confirm{display:flex;flex-wrap:wrap;align-items:center;gap:8px;width:100%}
+.confirm p{flex:1 1 100%;margin:0;font-weight:var(--weight-semibold)}
+.confirm .btn{min-height:var(--touch-min);flex:1}
+/* folha */
+.scrim{position:absolute;inset:0;background:var(--color-overlay);z-index:10;animation:fade var(--duration-base) var(--ease-out)}
+.sheet{position:absolute;left:0;right:0;bottom:0;z-index:11;background:var(--color-surface);border-radius:var(--radius-xl) var(--radius-xl) 0 0;padding:8px 16px 20px;box-shadow:var(--shadow-3);animation:up var(--duration-base) var(--ease-out)}
+.sheet .grab{width:36px;height:4px;border-radius:2px;background:var(--color-border-strong);margin:4px auto 12px}
+.sheet h2{margin:0 0 12px;font-size:var(--text-lg)}
+.sheet .song{display:flex;gap:12px;align-items:center;margin-bottom:16px}
+.sheet .song .thumb{width:96px}
+.sheet .acts{display:flex;gap:8px;margin-top:16px}
+.sheet .acts .btn{flex:1}
+.sheet .acts .btn-primary{flex:1.6}
+.sheet .callout{margin-top:12px}
+@keyframes up{from{transform:translateY(100%)}}
+@keyframes fade{from{opacity:0}}
+.toast{position:absolute;left:16px;right:16px;bottom:calc(var(--guest-nav-h) + 12px);z-index:12;display:flex;align-items:center;gap:10px;padding:8px 8px 8px 14px;min-height:52px;border-radius:var(--radius-md);background:var(--color-surface-3);box-shadow:var(--shadow-3);font-size:var(--text-sm);animation:pop var(--duration-base) var(--ease-out)}
+.toast .icon{color:var(--color-success)}
+.toast span{flex:1}
+.toast .btn{min-height:var(--touch-min);color:var(--color-info)}
+@keyframes pop{from{opacity:0;transform:translateY(8px) scale(.98)}}
+
+/* ===== Palco ===== */
+.stagewrap{max-width:1100px;margin:0 auto}
+.stage{position:relative;width:100%;aspect-ratio:16/9;container-type:size;overflow:hidden;border-radius:12px;background:var(--stage-bg);color:var(--stage-text);box-shadow:var(--shadow-3)}
+.stage .lights{position:absolute;inset:0;background:radial-gradient(40cqh 60cqh at 15% 0,rgb(255 77 148 / .25),transparent),radial-gradient(40cqh 60cqh at 85% 0,rgb(79 221 255 / .18),transparent),radial-gradient(60cqh 40cqh at 50% 110%,rgb(176 92 255 / .2),transparent)}
+.stage .blurbg{position:absolute;inset:-10%;background:linear-gradient(135deg,#6b2a8a,#c2185b 50%,#0a5a7a);filter:blur(8cqh) saturate(1.3)}
+.stage .blurbg::after{content:"";position:absolute;inset:0;background:var(--stage-bg-overlay)}
+.sc{position:absolute;inset:0;display:grid;grid-template-columns:1fr auto;align-items:center;gap:6cqh;padding:7cqh 8cqh}
+.sc .left .lg{display:flex;align-items:center;gap:1.5cqh;font-weight:800;font-size:3.4cqh;margin-bottom:4cqh}
+.sc .left .lg i{width:4.5cqh;height:4.5cqh;border-radius:50%;background:var(--gradient-brand)}
+.sc .big{font-size:8cqh;font-weight:800;line-height:1.05;margin:0 0 3cqh}
+.sc .mid{font-size:3.6cqh;color:var(--stage-text-next);margin:0 0 2cqh;line-height:1.3}
+.sc .meta{font-size:2.6cqh;color:var(--stage-text-meta)}
+.sc .hl{color:var(--stage-text-sung)}
+.qrbox{display:flex;flex-direction:column;align-items:center;gap:2.2cqh;animation:fade var(--duration-scene) var(--ease-in-out)}
+.qrcard{background:var(--qr-light);border-radius:2cqh;box-shadow:0 2cqh 6cqh rgb(0 0 0 / .55);line-height:0}
+.qrcard svg{display:block;width:40cqh;height:40cqh}
+.qrbox.sm .qrcard svg{width:30cqh;height:30cqh}
+.qrbox .cap{font-size:4cqh;font-weight:700;text-align:center;line-height:1.15;max-width:52cqh}
+.qrbox.sm .cap{font-size:2.8cqh;max-width:36cqh}
+.qrbox .url{font-size:2.6cqh;color:var(--stage-text-meta);font-variant-numeric:tabular-nums}
+.qrbox.sm .url{font-size:2.2cqh}
+.up{display:flex;flex-direction:column;gap:2cqh}
+.up .art{width:44cqh;aspect-ratio:16/9;border-radius:1.6cqh;background:linear-gradient(135deg,#3a1d6e,#c2185b);box-shadow:0 2cqh 5cqh rgb(0 0 0 / .5)}
+.up .lbl{color:var(--stage-accent);font-weight:800;letter-spacing:.08em;font-size:3cqh}
+.up h2{margin:0;font-size:7cqh;line-height:1.05}
+.up .a{font-size:3.4cqh;color:var(--stage-text-meta)}
+.up .row2{display:flex;align-items:center;gap:3cqh;flex-wrap:wrap}
+.pill{display:inline-flex;align-items:center;gap:1.2cqh;padding:1cqh 2.4cqh;border-radius:999px;background:rgb(255 255 255 / .12);font-size:3.2cqh;font-weight:700}
+.pill .icon,.by .icon{width:3cqh;height:3cqh}
+.by{display:flex;align-items:center;gap:1cqh;font-size:2.6cqh;color:var(--stage-text-meta)}
+.ringc{position:relative;width:11cqh;height:11cqh;display:grid;place-items:center;font-size:4.6cqh;font-weight:800}
+.ringc svg{position:absolute;inset:0;transform:rotate(-90deg)}
+.hints{display:flex;gap:3cqh;font-size:2.2cqh;color:var(--stage-text-meta);margin-top:2cqh}
+.key{display:inline-block;padding:0 1cqh;border:1px solid rgb(255 255 255 / .35);border-radius:.8cqh;margin-right:.6cqh;color:#fff}
+.prep .barS{height:1.2cqh;border-radius:1cqh;background:rgb(255 255 255 / .15);overflow:hidden;width:60cqh}
+.prep .barS i{display:block;height:100%;width:62%;background:var(--gradient-brand)}
+.lyr{position:absolute;inset:0;display:flex;flex-direction:column;justify-content:center;align-items:center;gap:3cqh;text-align:center}
+.lyr .cur{font-size:7.5cqh;font-weight:800}
+.lyr .cur span{color:var(--stage-text-sung)}
+.lyr .nxt{font-size:4.6cqh;color:var(--stage-text-next)}
+.lyr .note{position:absolute;bottom:3cqh;font-size:2.2cqh;color:var(--stage-text-meta);background:rgb(0 0 0 / .4);padding:.6cqh 2cqh;border-radius:999px}
+
+/* ===== Controle ===== */
+.ctl-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(380px,100%),1fr));gap:24px;max-width:1240px;margin:0 auto;align-items:start}
+.ctl-grid figure{margin:0}
+.ctl-grid figcaption{font-size:var(--text-xs);letter-spacing:var(--tracking-caps);text-transform:uppercase;color:var(--color-text-subtle);margin-bottom:8px;font-weight:var(--weight-bold)}
+.card{background:var(--color-surface);border:1px solid var(--color-border);border-radius:var(--radius-lg);padding:16px}
+.card>*+*{margin-top:12px}
+.card-h{display:flex;align-items:center;gap:10px}
+.card-h h3{margin:0;font-size:var(--text-lg);flex:1}
+.card-h .st{font-size:var(--text-sm);color:var(--color-text-muted)}
+.card .desc{margin:4px 0 0;font-size:var(--text-sm);color:var(--color-text-muted)}
+.switch{position:relative;width:48px;height:28px;border-radius:14px;border:1px solid var(--color-border-strong);background:var(--color-surface-3);cursor:pointer;padding:0;flex:none;transition:background var(--duration-fast)}
+.switch::after{content:"";position:absolute;top:3px;left:3px;width:20px;height:20px;border-radius:50%;background:var(--color-text-muted);transition:transform var(--duration-base) var(--ease-out),background var(--duration-base)}
+.switch[aria-checked=true]{background:var(--color-accent);border-color:var(--color-accent)}
+.switch[aria-checked=true]::after{transform:translateX(20px);background:var(--color-on-accent)}
+.switch[aria-busy=true]::after{background:transparent;border:2px solid var(--color-on-accent);border-right-color:transparent;animation:spin 1s linear infinite}
+.live{display:flex;align-items:center;gap:8px;font-size:var(--text-sm)}
+.live i{width:10px;height:10px;border-radius:50%;background:var(--color-success);box-shadow:0 0 0 0 var(--color-success);animation:pulse 2s infinite}
+@keyframes pulse{70%{box-shadow:0 0 0 6px transparent}}
+.linkrow{display:flex;gap:8px}
+.linkrow .input{min-height:var(--control-h);font-family:var(--font-mono);font-size:var(--text-sm);text-overflow:ellipsis}
+.lbl-sm{display:block;font-size:var(--text-sm);font-weight:var(--weight-semibold);margin-bottom:6px}
+.select{width:100%;min-height:var(--control-h);padding:0 12px;border-radius:var(--radius-md);border:1px solid var(--color-border-strong);background:var(--color-surface-2)}
+.small{font-size:var(--text-sm);color:var(--color-text-muted);margin:0}
+.btnrow{display:flex;gap:8px;flex-wrap:wrap}
+.callout ol{margin:6px 0 0;padding-left:18px}
+.callout code{font-family:var(--font-mono);font-size:var(--text-xs);background:var(--color-surface-2);padding:1px 4px;border-radius:4px}
+.modal{background:var(--color-surface);border:1px solid var(--color-border);border-radius:var(--radius-lg);box-shadow:var(--shadow-3);padding:20px}
+.modal h3{margin:0 0 8px;font-size:var(--text-xl)}
+.modal p{margin:0 0 12px;color:var(--color-text-muted);font-size:var(--text-sm)}
+.modal p b{color:var(--color-text)}
+.modal .btnrow{justify-content:flex-end;margin-top:16px}
+.cq{list-style:none;margin:0;padding:0}
+.cq li{display:flex;gap:10px;align-items:center;padding:8px 0;border-top:1px solid var(--color-border)}
+.cq li:first-child{border-top:0}
+.cq .txt{flex:1;min-width:0}
+.cq .t{font-weight:var(--weight-semibold);font-size:var(--text-sm)}
+.cq .m{font-size:var(--text-xs);color:var(--color-text-muted);display:flex;gap:4px;align-items:center;flex-wrap:wrap}
+.cq .ib{width:32px;height:32px;display:grid;place-items:center;color:var(--color-text-muted)}
+.hdrchip{display:flex;align-items:center;gap:12px;padding:12px 16px;background:var(--color-surface);border:1px solid var(--color-border);border-radius:var(--radius-lg)}
+.hdrchip .chip{height:32px;padding:0 12px;cursor:pointer;border:0}
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></symbol>
+  <symbol id="i-music" viewBox="0 0 24 24"><path d="M9 18V5l11-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="17" cy="16" r="3"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12.5 4.5 4.5L19 7.5"/></symbol>
+  <symbol id="i-alert" viewBox="0 0 24 24"><path d="M12 3 2 20h20z"/><path d="M12 10v4M12 17.5v.01"/></symbol>
+  <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7.5v.01"/></symbol>
+  <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></symbol>
+  <symbol id="i-user" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></symbol>
+  <symbol id="i-list" viewBox="0 0 24 24"><path d="M9 6h11M9 12h11M9 18h7M4 6h.01M4 12h.01M4 18h.01"/></symbol>
+  <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/></symbol>
+  <symbol id="i-wifi-off" viewBox="0 0 24 24"><path d="M2 8.5a15 15 0 0 1 4-2.4M10 5.1a15 15 0 0 1 12 3.4M5 12a10 10 0 0 1 3.5-2M15 10.3a10 10 0 0 1 4 1.7M8.5 15.5a5 5 0 0 1 7 0M12 19h.01M3 3l18 18"/></symbol>
+  <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M20 11a8 8 0 0 0-14.5-4.5L4 8M4 4v4h4M4 13a8 8 0 0 0 14.5 4.5L20 16M20 20v-4h-4"/></symbol>
+  <symbol id="i-chev" viewBox="0 0 24 24"><path d="m7 10 5 5 5-5"/></symbol>
+  <symbol id="i-phone" viewBox="0 0 24 24"><rect x="6" y="2" width="12" height="20" rx="2.5"/><path d="M11 18h2"/></symbol>
+  <symbol id="i-users" viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0"/><path d="M16 4.5a3.5 3.5 0 0 1 0 7M18 14a6.5 6.5 0 0 1 3.5 6"/></symbol>
+  <symbol id="i-qr" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><path d="M14 14h3v3M21 14v.01M14 21h3M20 18v3"/></symbol>
+  <symbol id="i-copy" viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V6a2 2 0 0 1 2-2h8"/></symbol>
+  <symbol id="i-logout" viewBox="0 0 24 24"><path d="M10 4H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h4M15 8l4 4-4 4M19 12H9"/></symbol>
+  <symbol id="i-lock" viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></symbol>
+  <symbol id="i-arrow-right" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></symbol>
+  <symbol id="i-arrow-up" viewBox="0 0 24 24"><path d="M12 19V5M6 11l6-6 6 6"/></symbol>
+  <symbol id="i-up" viewBox="0 0 24 24"><path d="m6 15 6-6 6 6"/></symbol>
+  <symbol id="i-down" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
+</svg>
+
+<div class="proto" role="toolbar" aria-label="Protótipo (não faz parte do produto)">
+  <b>Protótipo · Modo convidado</b>
+  <button data-view="guest">Celular</button>
+  <button data-view="stage">Palco</button>
+  <button data-view="control">Controle</button>
+  <label>Tela <select id="pState"></select></label>
+  <label id="pW">Largura <select id="pWidth"><option>320</option><option selected>390</option><option>430</option></select></label>
+  <span class="sp"></span>
+  <button id="pTheme">Tema: sistema</button>
+</div>
+
+<!-- ============ CELULAR ============ -->
+<section class="view" id="v-guest" aria-label="Celular">
+  <p class="view-note">Página <code>/guest</code>. Interativo: entre, busque (Enter), toque em Pedir, troque de aba, remova um pedido seu. Use "Tela" para forçar estados.</p>
+  <div class="phones"><div class="phone" id="phone"><div class="g" id="g"></div></div></div>
+</section>
+
+<!-- ============ PALCO ============ -->
+<section class="view" id="v-stage" aria-label="Palco">
+  <p class="view-note">Palco 16:9 (sempre escuro). O QR aparece só entre músicas. QR = placeholder (o real vem de <code>GET /api/guest/qr</code>).</p>
+  <div class="stagewrap"><div class="stage" id="stage"></div></div>
+</section>
+
+<!-- ============ CONTROLE ============ -->
+<section class="view" id="v-control" aria-label="Controle">
+  <p class="view-note">Card "Modo convidado" no topo da coluna lateral (380 px), modais e a fila com "pedido por".</p>
+  <div class="ctl-grid" id="ctl"></div>
+</section>
+
+<div id="live" class="sr-only" aria-live="polite"></div>
+
+<script>
+/* ---------------- utilidades ---------------- */
+const $=s=>document.querySelector(s);
+const I=(id,c='')=>`<svg class="icon ${c}" aria-hidden="true"><use href="#i-${id}"/></svg>`;
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const P=new URLSearchParams(location.search);
+if(P.get('still'))document.documentElement.classList.add('still');
+if(P.get('theme'))document.documentElement.dataset.theme=P.get('theme');
+
+/* QR falso: 29×29 com padrões de posição, zona de silêncio de 4 módulos */
+function qr(seed=7){
+  const n=29,q=4,N=n+2*q;let r=seed,out='';
+  const rnd=()=>(r=(r*1103515245+12345)&0x7fffffff)/0x7fffffff;
+  const finder=(x,y)=>{out+=`<rect x="${x}" y="${y}" width="7" height="7"/><rect x="${x+1}" y="${y+1}" width="5" height="5" fill="var(--qr-light)"/><rect x="${x+2}" y="${y+2}" width="3" height="3"/>`};
+  const inF=(x,y)=>(x<8&&y<8)||(x>n-9&&y<8)||(x<8&&y>n-9);
+  for(let y=0;y<n;y++)for(let x=0;x<n;x++){if(inF(x,y))continue;if((x===6||y===6)?((x+y)%2===0):rnd()>.52)out+=`<rect x="${x+q}" y="${y+q}" width="1" height="1"/>`}
+  finder(q,q);finder(q+n-7,q);finder(q,q+n-7);
+  return `<svg viewBox="0 0 ${N} ${N}" role="img" aria-label="QR code do convite" shape-rendering="crispEdges" fill="var(--qr-dark)">${out}</svg>`;
+}
+
+/* ---------------- dados fictícios ---------------- */
+const ART=['#6b2a8a','#0a5a7a','#8a2a4a','#2a6a4a','#7a5a1a','#3a2a8a'];
+const LIB=[
+  {id:1,t:'Evidências',a:'Chitãozinho & Xororó',d:'4:38'},{id:2,t:'Garota de Ipanema',a:'Tom Jobim',d:'3:12'},
+  {id:3,t:'Canção da Estrada Vazia',a:'Os Faróis',d:'3:31'},{id:4,t:'Dança no Telhado',a:'Lua Nova',d:'3:58'},
+  {id:5,t:'Luzes de Neon',a:'Banda Aurora',d:'4:05'},{id:6,t:'Tempo Perdido',a:'Legião Urbana',d:'5:01'}];
+const YT=[
+  {t:'Evidências — Karaokê versão original',a:'KaraokeBR',d:'4:41',k:'new'},
+  {t:'Evidências (ao vivo no estádio)',a:'Chitãozinho & Xororó',d:'5:20',k:'prep',p:40},
+  {t:'Medley sertanejo — 1 hora de clássicos',a:'Canal Modão',d:'1:12:40',k:'long'},
+  {t:'Rádio sertaneja 24h',a:'Rádio Modão',d:'AO VIVO',k:'live'}];
+let st={view:'guest',s:'search',me:'Ana',tab:'search',q:'',sheet:null,toast:null,removing:null,
+  queue:[
+    {t:'Luzes de Neon',a:'Banda Aurora',singer:'Carla',by:'Carla'},
+    {t:'Dança no Telhado',a:'Lua Nova',singer:'Diego',by:'Diego',prep:true},
+    {t:'Evidências',a:'Chitãozinho & Xororó',singer:'Ana',by:'Ana'},
+    {t:'Garota de Ipanema',a:'Tom Jobim',singer:'Ana',by:'Ana',prep:true,p:62,stage:'Separando voz'},
+    {t:'Tempo Perdido',a:'Legião Urbana',singer:'Bruno',by:'Bruno'}],
+  now:{t:'Canção da Estrada Vazia',a:'Os Faróis',singer:'Bruno',by:'Bruno'}};
+const mine=()=>st.queue.filter(x=>x.by===st.me);
+const say=t=>{$('#live').textContent=t};
+
+/* ---------------- estados forçados do celular ---------------- */
+const GSTATES={
+  'join':'G1 Entrar','join-error':'G1 Entrar · erro de validação','join-loading':'G1 Entrar · entrando…',
+  'home':'G2 Buscar · sem busca (Prontas)','search':'G2 Buscar · resultados','search-loading':'G2 Buscar · YouTube carregando',
+  'search-none':'G2 Buscar · nada encontrado','search-ytfail':'G2 Buscar · YouTube falhou','search-429':'G2 Buscar · 429 (calma!)',
+  'search-limit':'G2 Buscar · limite 3/3','search-jobs':'G2 Buscar · 2 preparos ativos','home-emptylib':'G2 Buscar · biblioteca vazia',
+  'confirm':'G3 Confirmar · Pronta','confirm-new':'G3 Confirmar · nova (YouTube)','confirm-sending':'G3 Confirmar · pedindo…',
+  'confirm-long':'G3 Confirmar · vídeo longo recusado','confirm-limit':'G3 Confirmar · limite (servidor)',
+  'queue':'G4 Minha fila','queue-next':'G4 Minha fila · você é a próxima','queue-myturn':'G4 Minha fila · é a sua vez',
+  'queue-remove':'G4 Minha fila · confirmar remoção','queue-empty':'G4 Minha fila · vazia','queue-toast':'G4 · toast pedido feito',
+  'reconnect':'Faixa Reconectando…','rename':'G5 Trocar nome',
+  'no-invite':'G6 Falta o convite','invite-invalid':'G7 QR não vale mais','ended':'G8 Sessão encerrada','off':'G9 Modo desligado','offline':'G10 Sem conexão'};
+const SSTATES={'idle':'Espera (com QR)','press':'Pressione Enter (com QR)','upnext':'A seguir (com QR)','upnext-by':'A seguir · Pedido por (Should)',
+  'prep':'Aguardando preparo (com QR)','playing':'Tocando (sem QR)','idle-off':'Espera · modo desligado'};
+
+/* ---------------- render do celular ---------------- */
+function head(){return `<header class="g-head"><div class="logo"><span class="logo-dot" aria-hidden="true"></span>Karaokê</div>
+  <button class="name-chip" onclick="go('rename')" aria-label="Seu nome: ${esc(st.me)}. Trocar nome">${I('user','icon-sm')}<span>${esc(st.me)}</span>${I('chev','icon-sm')}</button></header>`}
+function nav(){const n=mine().length;return `<nav class="g-nav" aria-label="Seções">
+  <button class="g-tab" ${st.tab==='search'?'aria-current="page"':''} onclick="tab('search')">${I('search')}Buscar</button>
+  <button class="g-tab" ${st.tab==='queue'?'aria-current="page"':''} onclick="tab('queue')" aria-label="Minha fila, ${n} pedidos seus">${I('list')}Minha fila${n?`<span class="badge" aria-hidden="true">${n}</span>`:''}</button></nav>`}
+function meter(){const n=Math.min(3,mine().length),full=n>=3;if(!n)return '';
+  return `<div class="meter ${full?'full':''}" role="meter" aria-valuemin="0" aria-valuemax="3" aria-valuenow="${n}" aria-label="Seus pedidos na fila"><span class="segs">${[0,1,2].map(i=>`<i class="${i<n?'on':''}"></i>`).join('')}</span><span><b class="tnum">${n} de 3</b> pedidos na fila</span></div>`}
+function libRow(s,blocked){return `<li class="row tap" onclick="openSheet('lib',${s.id})"><div class="thumb" style="--art:${ART[s.id%6]}">${I('music')}</div>
+  <div class="txt"><div class="t" title="${esc(s.t)}">${esc(s.t)}</div><div class="m"><span>${esc(s.a)} · <span class="tnum">${s.d}</span></span><span class="chip chip-success">${I('check')}Pronta</span>${st.queue.some(q=>q.t===s.t)?'<span class="chip chip-neutral">Já na fila</span>':''}</div></div>
+  <button class="btn btn-secondary" ${blocked?'aria-disabled="true"':''} onclick="event.stopPropagation();openSheet('lib',${s.id})">Pedir</button></li>`}
+function ytRow(r,i,blocked){let chip='',why='',btn=`<button class="btn btn-secondary" ${blocked?'aria-disabled="true"':''} onclick="openSheet('yt',${i})">Pedir</button>`;
+  if(r.k==='new')chip=`<span class="chip chip-info">${I('clock')}Nova · ~1 min</span>`;
+  if(r.k==='prep')chip=`<span class="chip chip-info">${I('clock')}Preparando 40%</span>`;
+  if(r.k==='long'){chip=`<span class="chip chip-warning">${I('alert')}Vídeo longo</span>`;why='<div class="why">Na festa, só vídeos de até 15 min.</div>';btn=''}
+  if(r.k==='live'){chip=`<span class="chip chip-danger">Ao vivo</span>`;why='<div class="why">Transmissões ao vivo não podem ser cantadas.</div>';btn=''}
+  return `<li class="row"><div class="thumb" style="--art:${ART[(i+2)%6]}">${I('music')}</div><div class="txt"><div class="t" title="${esc(r.t)}">${esc(r.t)}</div>
+  <div class="m"><span>${esc(r.a)} · <span class="tnum">${r.d}</span></span>${chip}</div>${why}</div>${btn}</li>`}
+function skel(n){return Array.from({length:n},()=>`<li class="row" aria-hidden="true"><div class="thumb skel"></div><div class="txt"><div class="skel" style="height:14px;width:80%"></div><div class="skel" style="height:12px;width:50%;margin-top:8px"></div></div><div class="skel" style="width:64px;height:44px;border-radius:10px"></div></li>`).join('')}
+function searchView(){
+  const s=st.s, q=st.q||(['home','home-emptylib'].includes(s)?'':'evidências');
+  const limit=s==='search-limit'||mine().length>=3, jobs=s==='search-jobs';
+  let h=`<div class="search"><form role="search" onsubmit="event.preventDefault();doSearch(this.q.value)"><div class="wrap">${I('search')}
+    <label class="sr-only" for="q">Buscar música</label><input id="q" name="q" class="input" type="search" enterkeyhint="search" placeholder="Música ou artista…" value="${esc(q)}" autocomplete="off" ${s==='search-429'?'aria-describedby="rl"':''}>
+    ${q?`<button type="button" class="clr" aria-label="Limpar busca" onclick="doSearch('')">${I('x')}</button>`:''}</div></form></div>`;
+  h+=meter();
+  if(limit)h+=`<div class="callout callout-warning" role="status">${I('alert')}<p>Você já tem <b>3 músicas na fila</b> — espere uma tocar para pedir outra.</p></div>`;
+  if(jobs)h+=`<div class="callout callout-warning" role="status">${I('clock')}<p>Você já tem <b>2 músicas sendo preparadas</b> — espere uma ficar pronta ou peça uma <b>Pronta</b>.</p></div>`;
+  if(s==='search-429')h+=`<div class="callout callout-warning" id="rl" role="status">${I('clock')}<p><b>Calma!</b> Muitas buscas seguidas. Tente em <b class="tnum" id="cd">8</b> s.</p></div>`;
+  if(!q){
+    if(s==='home-emptylib')return h+`<div class="empty"><div class="ring">${I('arrow-up')}</div><h2>O que vamos cantar?</h2><p>Ainda não há músicas prontas. Busque qualquer música acima — ela é preparada em cerca de 1 minuto.</p></div>`;
+    return h+`<div><h2 class="sec-h">Prontas para cantar · ${LIB.length}</h2><ul class="list">${LIB.map(x=>libRow(x,limit)).join('')}</ul></div>`;
+  }
+  if(s==='search-none')return h+`<div class="empty"><div class="ring">${I('search')}</div><h2>Nada encontrado</h2><p>Nada para "${esc(q)}". Tente só o nome do artista.</p></div>`;
+  const lib=LIB.filter(x=>(x.t+x.a).toLowerCase().includes(q.toLowerCase().slice(0,4)));
+  h+=`<div><h2 class="sec-h">Na Biblioteca · ${lib.length}</h2>${lib.length?`<ul class="list">${lib.map(x=>libRow(x,limit)).join('')}</ul>`:'<p class="small" style="margin-top:8px">Nenhuma pronta com esse nome.</p>'}</div>`;
+  h+=`<div aria-busy="${s==='search-loading'}"><h2 class="sec-h">No YouTube</h2>`;
+  if(s==='search-loading')h+=`<ul class="list">${skel(4)}</ul>`;
+  else if(s==='search-ytfail')h+=`<div class="callout callout-danger" style="margin-top:8px">${I('wifi-off')}<div><p>O YouTube não respondeu. As músicas <b>Prontas</b> continuam disponíveis.</p><div class="act"><button class="btn btn-secondary" onclick="go('search')">${I('refresh')}Tentar de novo</button></div></div></div>`;
+  else h+=`<ul class="list">${YT.map((r,i)=>ytRow(r,i,limit||jobs)).join('')}</ul>`;
+  return h+'</div>';
+}
+function when(i){const n=i+1;return n===1?'Você é a próxima!':`Sua vez em ${n} músicas`}
+function queueView(){
+  const s=st.s;
+  if(s==='queue-empty'||(!st.queue.length&&!st.now))return `<div class="empty" style="padding-top:64px"><div class="ring">${I('list')}</div><h2>A fila está vazia</h2><p>Seja o primeiro a cantar!</p><button class="btn btn-primary btn-lg" onclick="tab('search')">${I('search')}Buscar música</button></div>`;
+  const myTurn=s==='queue-myturn', q=s==='queue-next'?st.queue.slice(2):st.queue;
+  let h='';
+  const now=myTurn?{...st.now,singer:st.me,by:st.me,t:'Evidências',a:'Chitãozinho & Xororó'}:st.now;
+  h+=`<div class="now ${myTurn?'mine':''}"><div class="thumb" style="--art:${ART[3]}">${I('music')}</div><div class="txt" style="min-width:0"><div class="lbl">Tocando agora</div><div style="font-weight:600">${esc(now.t)}</div><div class="small">${esc(now.a)} · ${esc(now.singer)}${myTurn?' · <span class="chip chip-solid">Você</span>':''}</div></div><span class="eq" aria-hidden="true"><i></i><i></i><i></i></span></div>`;
+  const idx=q.findIndex(x=>x.by===st.me);
+  if(myTurn)h+=`<div class="turn go" role="status"><div class="v">É a sua vez!</div><div class="k">Vá até o microfone — a letra está na TV.</div></div>`;
+  else if(idx>=0)h+=`<div class="turn" role="status"><div class="k">Sua próxima: <b>${esc(q[idx].t)}</b></div><div class="v">${when(idx)}</div></div>`;
+  h+=`<div><h2 class="sec-h">Próximas · ${q.length}</h2><ul class="list" aria-label="Fila">`;
+  q.forEach((x,i)=>{const m=x.by===st.me;
+    if(m&&(st.removing===x.t||(s==='queue-remove'&&x.t==='Evidências'))){h+=`<li class="qrow mine"><div class="confirm"><p>Remover "${esc(x.t)}" da fila?</p><button class="btn btn-danger" onclick="removeIt('${esc(x.t)}')">Remover</button><button class="btn btn-secondary" id="cancelRm" onclick="st.removing=null;if(st.s==='queue-remove')st.s='queue';render()">Cancelar</button></div></li>`;return}
+    let meta=`<span>${esc(x.singer)}</span>`;
+    if(m)meta+=`<span class="chip chip-solid">Você</span><span class="when">${when(i)}</span>`;
+    if(x.prep&&!m)meta+=`<span class="chip chip-info">${I('clock')}Preparando</span>`;
+    let bar=(x.prep&&m)?`<div class="bar" role="progressbar" aria-valuenow="${x.p}" aria-valuemin="0" aria-valuemax="100" aria-label="Preparo"><i style="width:${x.p}%"></i></div><div class="m"><span>${x.stage} · <span class="tnum">${x.p}%</span></span></div><div class="m" style="font-size:12px">Se não ficar pronta a tempo, ela espera e entra logo depois.</div>`:'';
+    h+=`<li class="qrow ${m?'mine':''}" aria-label="${esc(x.t)}, cantor ${esc(x.singer)}${m?', seu pedido, '+when(i):''}"><span class="n tnum">${i+1}</span><div class="thumb" style="--art:${ART[i%6]};width:56px">${I('music')}</div>
+      <div class="txt"><div class="t" title="${esc(x.t)}">${esc(x.t)}</div><div class="m">${meta}</div>${bar}</div>
+      ${m?`<button class="btn btn-ghost del" aria-label="Remover ${esc(x.t)} da fila" onclick="st.removing='${esc(x.t)}';render();$('#cancelRm')&&$('#cancelRm').focus()">${I('trash')}</button>`:''}</li>`});
+  return h+'</ul></div>';
+}
+function stateScreen(ic,cls,t,p,act,small){return `<div class="state"><div class="empty"><div class="ring ${cls}">${I(ic)}</div><h2>${t}</h2><p>${p}</p>${act||''}${small?`<p class="small" style="margin-top:12px">${small}</p>`:''}</div></div>`}
+function sheet(){
+  const sh=st.sheet;if(!sh)return '';const s=st.s;
+  if(sh.kind==='rename')return `<div class="scrim" onclick="closeSheet()"></div><div class="sheet" role="dialog" aria-modal="true" aria-labelledby="shT"><div class="grab"></div><h2 id="shT">Seu nome</h2>
+    <div class="field"><label for="nm">Nome</label><input id="nm" class="input" maxlength="40" value="${esc(st.me)}" autocomplete="nickname"></div>
+    <div class="hint"><span>Vale para os próximos pedidos. Os já feitos não mudam.</span></div>
+    <div class="acts"><button class="btn btn-ghost btn-lg" onclick="closeSheet()">Cancelar</button><button class="btn btn-primary btn-lg" onclick="st.me=$('#nm').value.trim()||st.me;closeSheet()">Salvar</button></div></div>`;
+  const it=sh.kind==='lib'?LIB.find(x=>x.id===sh.id):YT[sh.id];const isNew=sh.kind==='yt';
+  const sending=s==='confirm-sending';let err='';
+  if(s==='confirm-long')err=`<div class="callout callout-danger" role="alert">${I('alert')}<p>Este vídeo tem <b class="tnum">1:12:40</b>. Na festa, só vídeos de até 15 min — procure outra versão.</p></div>`;
+  if(s==='confirm-limit')err=`<div class="callout callout-warning" role="alert">${I('alert')}<p>Você já tem <b>3 músicas na fila</b> — espere uma tocar para pedir outra.</p></div>`;
+  const info=isNew?`Vai ser preparada antes de tocar (cerca de 1 min). Se a vez chegar antes, ela espera.`:`Entra no fim da fila · sua vez em ~${st.queue.length+1} músicas.`;
+  return `<div class="scrim" onclick="closeSheet()"></div><div class="sheet" role="dialog" aria-modal="true" aria-labelledby="shT"><div class="grab"></div>
+    <div class="song"><div class="thumb" style="--art:${ART[2]}">${I('music')}</div><div style="min-width:0"><h2 id="shT" tabindex="-1" style="margin:0">${esc(it.t)}</h2><div class="small">${esc(it.a)} · <span class="tnum">${it.d}</span></div></div></div>
+    <div class="field"><label for="sg">Quem vai cantar?</label><input id="sg" class="input" maxlength="40" value="${esc(st.me)}" ${sending?'readonly':''} autocomplete="off"></div>
+    ${err?err:`<div class="callout callout-info" style="margin-top:12px">${I('info')}<p>${info}</p></div>`}
+    <div class="acts">${err?`<button class="btn btn-primary btn-lg" onclick="closeSheet()">Entendi</button>`:`<button class="btn btn-ghost btn-lg" onclick="closeSheet()" ${sending?'disabled':''}>Cancelar</button>
+    <button class="btn btn-primary btn-lg" onclick="confirmReq()" ${sending?'aria-busy="true"':''}>${sending?I('refresh','spin')+'Pedindo…':'Pedir música'}</button>`}</div></div>`;
+}
+function render(){
+  const g=$('#g'),s=st.s;
+  if(s.startsWith('join')){const e=s==='join-error',l=s==='join-loading';
+    g.innerHTML=`<div class="join"><span class="logo-dot" aria-hidden="true"></span><h1>Bem-vindo à festa!</h1><p class="lead">Escolha músicas e entre na fila direto do celular.</p>
+    <form onsubmit="event.preventDefault();join(this.n.value)" novalidate><div class="field"><label for="n">Seu nome</label>
+    <input id="n" name="n" class="input" maxlength="40" autocomplete="nickname" enterkeyhint="go" value="${e?'':esc(l?st.me:'')}" ${e?'aria-invalid="true" aria-describedby="nh"':'aria-describedby="nh"'} ${l?'readonly':''}></div>
+    <div class="hint ${e?'err':''}" id="nh">${e?'Digite seu nome para entrar.':'Aparece na TV quando for sua vez.'}</div>
+    <button class="btn btn-primary btn-lg" ${l?'aria-busy="true"':''}>${l?I('refresh','spin')+'Entrando…':'Entrar na festa'+I('arrow-right')}</button></form>
+    <p class="priv">${I('lock','icon-sm')}Rede local · nada é enviado para a internet.</p></div>`;return}
+  const S={'no-invite':['qr','','Falta o convite','Aponte a câmera para o QR que aparece na TV entre as músicas.','', 'Já entrou antes? Recarregue esta página.'],
+    'invite-invalid':['qr','warn','Este QR não vale mais','Escaneie o QR da TV de novo — ele muda quando o anfitrião gera um novo.'],
+    'ended':['logout','','O anfitrião encerrou os convidados','Seus pedidos continuam na fila. Para pedir mais, escaneie o QR da TV de novo.'],
+    'off':['wifi-off','','Pedidos pelo celular estão desligados','Peça ao anfitrião para ligar o Modo convidado no computador.',`<button class="btn btn-secondary btn-lg" onclick="go('search')">${I('refresh')}Tentar de novo</button>`],
+    'offline':['wifi-off','dang','Sem conexão com o karaokê','Confira se você está no Wi-Fi da festa. Se o anfitrião desligou o modo convidado, peça para ligar de novo.',`<button class="btn btn-primary btn-lg" onclick="go('search')">${I('refresh')}Tentar de novo</button>`]};
+  if(S[s]){g.innerHTML=stateScreen(...S[s]);return}
+  if(s.startsWith('queue'))st.tab='queue';
+  if(s.startsWith('search')||s.startsWith('home')||s.startsWith('confirm'))st.tab='search';
+  if(s.startsWith('confirm')&&!st.sheet)st.sheet={kind:s==='confirm'?'lib':'yt',id:s==='confirm'?1:(s==='confirm-long'?2:0)};
+  if(s==='rename'&&!st.sheet)st.sheet={kind:'rename'};
+  if(s==='queue-toast'&&!st.toast)st.toast={t:'Pedido! Sua vez em 4 músicas',a:'Ver fila'};
+  g.innerHTML=head()+(s==='reconnect'?`<div class="reconn" role="status">${I('refresh','spin icon-sm')}Reconectando…</div>`:'')+
+    `<main class="g-main" id="main">${st.tab==='queue'?queueView():searchView()}</main>`+nav()+sheet()+
+    (st.toast?`<div class="toast" role="status">${I('check')}<span>${esc(st.toast.t)}</span>${st.toast.a?`<button class="btn btn-ghost" onclick="st.toast=null;tab('queue')">${st.toast.a}</button>`:''}</div>`:'');
+  if(st.sheet){const h=$('#shT');h&&h.focus&&h.focus()}
+}
+/* ações */
+function go(s){st.s=s;st.sheet=null;st.toast=null;st.removing=null;if(s==='home'||s==='home-emptylib')st.q='';sync();render()}
+function tab(t){st.tab=t;st.s=t==='queue'?'queue':(st.q?'search':'home');st.sheet=null;render()}
+function join(v){if(!v.trim()){go('join-error');$('#n').focus();return}st.me=v.trim().slice(0,40);go('join-loading');setTimeout(()=>{st.s='home';st.tab='search';render();say('Você entrou na festa')},700)}
+function doSearch(v){st.q=v.trim();if(!st.q){st.s='home';render();return}st.s='search-loading';render();setTimeout(()=>{st.s='search';render()},800)}
+function openSheet(kind,id){if(mine().length>=3)return;st.sheet={kind,id};render()}
+function closeSheet(){st.sheet=null;if(st.s.startsWith('confirm')||st.s==='rename')st.s=st.q?'search':'home';render()}
+function confirmReq(){const sh=st.sheet,it=sh.kind==='lib'?LIB.find(x=>x.id===sh.id):YT[sh.id];const singer=($('#sg').value.trim()||st.me);
+  st.s='confirm-sending';render();
+  setTimeout(()=>{st.queue.push(sh.kind==='lib'?{t:it.t,a:it.a,singer,by:st.me}:{t:it.t,a:it.a,singer,by:st.me,prep:true,p:5,stage:'Baixando'});
+    st.sheet=null;st.s=st.q?'search':'home';const n=st.queue.length;st.toast={t:`Pedido! Sua vez em ${n} músicas`,a:'Ver fila'};render();say(st.toast.t);
+    clearTimeout(window._tt);window._tt=setTimeout(()=>{st.toast=null;render()},5000)},700)}
+function removeIt(t){st.queue=st.queue.filter(x=>!(x.t===t&&x.by===st.me));st.removing=null;st.s='queue';st.toast={t:'Removida da fila'};render();say('Removida da fila');clearTimeout(window._tt);window._tt=setTimeout(()=>{st.toast=null;render()},5000)}
+document.addEventListener('keydown',e=>{if(e.key==='Escape'&&st.sheet)closeSheet()});
+
+/* ---------------- Palco ---------------- */
+function stage(s){
+  const off=s==='idle-off', qrBig=`<div class="qrbox"><div class="qrcard">${qr(11)}</div><div class="cap">Escaneie para escolher sua música</div><div class="url">192.168.0.12:8765/guest</div></div>`;
+  const qrSm=`<div class="qrbox sm"><div class="qrcard">${qr(11)}</div><div class="cap">Escaneie para pedir sua música</div><div class="url">192.168.0.12:8765/guest</div></div>`;
+  let h='';
+  if(s==='idle'||s==='idle-off'||s==='press'){
+    const press=s==='press';
+    h=`<div class="lights"></div><div class="sc" style="${off?'grid-template-columns:1fr;text-align:center':''}"><div class="left"><div class="lg" style="${off?'justify-content:center':''}"><i></i>Karaokê</div>
+      ${press?`<p class="big">Pressione <span class="hl">Enter</span><br>para começar</p><p class="mid">3 músicas na fila · a primeira é "Luzes de Neon"</p>`:`<p class="big">Quem canta<br>primeiro?</p>`}
+      ${off?`<p class="mid">A fila está vazia. No PC, abra o Controle, busque uma música e clique em <b class="hl">Preparar e enfileirar</b>.</p><p class="meta">Controle: <b class="hl">http://127.0.0.1:8765</b> · <span class="key">?</span>atalhos</p>`
+      :press?`<p class="meta">Enquanto isso, escaneie o QR e escolha sua música.</p>`:`<p class="mid">Escaneie o QR com o celular e<br>escolha sua música.</p><p class="meta">ou use o Controle no PC · <span class="key">?</span>atalhos</p>`}
+      </div>${off?'':qrBig}</div>`;
+  } else if(s==='upnext'||s==='upnext-by'||s==='prep'){
+    const by=s==='upnext-by', prep=s==='prep';
+    h=`<div class="blurbg"></div><div class="sc"><div class="up">${prep?`<div class="lbl">QUASE LÁ</div><h2>Preparando "Evidências"</h2><div class="a">Separando voz · etapa 2 de 3</div><div class="prep"><div class="barS"><i></i></div></div><div class="a tnum">62% · cerca de 40 s</div><div class="hints"><span><span class="key">N</span>pular para a próxima pronta</span></div>`
+      :`<div class="art"></div><div class="lbl">A SEGUIR</div><h2>${by?'Garota de Ipanema':'Luzes de Neon'}</h2><div class="a">${by?'Tom Jobim':'Banda Aurora'}</div>
+      <div class="row2"><span class="pill">${I('user')}${by?'Bruno':'Carla'}, é sua vez!</span>
+      <div class="ringc" role="timer" aria-label="Começa em 6 segundos"><svg viewBox="0 0 100 100"><circle cx="50" cy="50" r="44" fill="none" stroke="rgb(255 255 255 / .15)" stroke-width="6"/><circle cx="50" cy="50" r="44" fill="none" stroke="var(--stage-accent)" stroke-width="6" stroke-linecap="round" stroke-dasharray="276" stroke-dashoffset="69"/></svg><span class="tnum">6</span></div></div>
+      ${by?`<div class="by">${I('phone')}Pedido por Ana</div>`:''}
+      <div class="hints"><span><span class="key">Enter</span>começar agora</span><span><span class="key">A</span>pausar auto-avanço</span><span><span class="key">N</span>pular</span></div>`}</div>${qrSm}</div>`;
+  } else {
+    h=`<div class="blurbg"></div><div class="lyr"><div class="cur"><span>Saí de casa sem</span> olhar pra trás</div><div class="nxt">A estrada inteira só pra mim</div><div class="note">Durante a música o QR nunca aparece</div></div>`;
+  }
+  $('#stage').innerHTML=h;
+}
+
+/* ---------------- Controle ---------------- */
+function control(){
+  const q=`<ul class="cq">
+   <li><div class="thumb" style="--art:${ART[1]};width:56px">${I('music')}</div><div class="txt"><div class="t">Luzes de Neon</div><div class="m">Carla · ${I('phone','icon-sm')}pedido por Carla</div></div><span class="ib">${I('up','icon-sm')}</span><span class="ib">${I('down','icon-sm')}</span><span class="ib">${I('x','icon-sm')}</span></li>
+   <li><div class="thumb" style="--art:${ART[2]};width:56px">${I('music')}</div><div class="txt"><div class="t">Dança no Telhado</div><div class="m">Diego · <span class="chip chip-info">${I('clock')}Separando voz 62%</span></div></div><span class="ib">${I('up','icon-sm')}</span><span class="ib">${I('down','icon-sm')}</span><span class="ib">${I('x','icon-sm')}</span></li>
+   <li><div class="thumb" style="--art:${ART[4]};width:56px">${I('music')}</div><div class="txt"><div class="t">Garota de Ipanema</div><div class="m">Bruno · ${I('phone','icon-sm')}pedido por Ana</div></div><span class="ib">${I('up','icon-sm')}</span><span class="ib">${I('down','icon-sm')}</span><span class="ib">${I('x','icon-sm')}</span></li></ul>`;
+  const on=(extra='',sel=true)=>`<div class="card"><div class="card-h">${I('users')}<h3>Modo convidado</h3><span class="st">Ligado</span><button class="switch" role="switch" aria-checked="true" aria-label="Modo convidado"></button></div>
+    ${extra.includes('fw')?'<div class="live" style="color:var(--color-text-muted)"><i style="background:var(--color-text-subtle);animation:none"></i>0 convidados conectados</div>':'<div class="live"><i></i><span><b>3 convidados</b> conectados</span></div>'}
+    <div><label class="lbl-sm" for="lk${extra}">Link do convite</label><div class="linkrow"><input id="lk${extra}" class="input" readonly value="http://192.168.0.12:8765/guest#t=Qm9hIGZlc3RhIQ" title="O link contém o convite. Compartilhe só com quem está na festa.">
+      <button class="btn btn-secondary" onclick="this.innerHTML='${I('check').replace(/"/g,'&quot;')}Copiado';setTimeout(()=>this.innerHTML='${I('copy').replace(/"/g,'&quot;')}Copiar',2000)">${I('copy')}Copiar</button></div></div>
+    ${sel?`<div><label class="lbl-sm" for="ip${extra}">Rede</label><select id="ip${extra}" class="select"><option>192.168.0.12 · wlan0 (recomendado)</option><option>172.17.0.1 · docker0</option><option>10.8.0.3 · tun0 (VPN)</option></select></div>`:''}
+    ${extra.includes('fw')?`<div class="callout callout-info">${I('info')}<div><p><b>Ninguém conseguiu entrar?</b> Confira:</p><ol><li>o celular está no <b>mesmo Wi-Fi</b>;</li><li>o firewall libera a porta <b>8765</b>: <code>sudo ufw allow 8765/tcp</code> ou <code>sudo firewall-cmd --add-port=8765/tcp</code>;</li><li>a rede escolhida acima.</li></ol><div class="act"><button class="btn btn-ghost">${I('copy')}Copiar comando</button><button class="btn btn-ghost">Dispensar</button></div></div></div>`:''}
+    <p class="small">${I('info','icon-sm')} O QR aparece no Palco entre as músicas.</p>
+    <div class="btnrow"><button class="btn btn-secondary">${I('refresh')}Novo QR</button><button class="btn btn-danger-ghost">${I('logout')}Encerrar convidados</button></div></div>`;
+  $('#ctl').innerHTML=`
+  <figure><figcaption>Header · chip com o modo ligado</figcaption><div class="hdrchip"><span class="logo"><span class="logo-dot"></span>Karaokê</span><span class="sp" style="flex:1"></span><button class="chip chip-info" aria-label="Convidados: 3 conectados">${I('users')}Convidados 3</button></div></figure>
+  <figure><figcaption>Desligado (compacto)</figcaption><div class="card"><div class="card-h">${I('users')}<h3>Modo convidado</h3><button class="switch" role="switch" aria-checked="false" aria-label="Modo convidado" onclick="this.setAttribute('aria-busy','true');this.setAttribute('aria-checked','true');setTimeout(()=>this.removeAttribute('aria-busy'),900)"></button></div><p class="desc">Deixe os convidados pedirem músicas pelo celular.</p></div></figure>
+  <figure><figcaption>Modal ao ligar (aviso de rede)</figcaption><div class="modal" role="dialog" aria-labelledby="m1"><h3 id="m1">Ligar o modo convidado?</h3><p>Quem estiver nesta rede Wi-Fi e escanear o QR da TV poderá <b>pedir músicas e ver a fila</b>.</p><p>Use só em <b>rede doméstica confiável</b> — não em Wi-Fi público. Nada sai da sua rede.</p><span class="chip chip-neutral">${I('clock')}Desliga sozinho quando você fechar o app</span><div class="btnrow"><button class="btn btn-ghost">Cancelar</button><button class="btn btn-primary">Ligar</button></div></div></figure>
+  <figure><figcaption>Ligado · 3 convidados · mais de 1 rede</figcaption>${on('a')}</figure>
+  <figure><figcaption>Ligado · ninguém entrou após 60 s (dica de firewall)</figcaption>${on('fw',false)}</figure>
+  <figure><figcaption>Ligando · erro</figcaption><div class="card"><div class="card-h">${I('users')}<h3>Modo convidado</h3><button class="switch" role="switch" aria-checked="false" aria-label="Modo convidado"></button></div><div class="callout callout-danger">${I('alert')}<div><p>Não deu para abrir na rede: a porta 8765 já está em uso em 192.168.0.12.</p><div class="act"><button class="btn btn-secondary">${I('refresh')}Tentar de novo</button></div></div></div></div></figure>
+  <figure><figcaption>Modal · Encerrar convidados</figcaption><div class="modal" role="dialog" aria-labelledby="m2"><h3 id="m2">Encerrar 3 convidados?</h3><p>Os celulares saem da festa e o QR atual deixa de valer. As músicas que eles pediram <b>continuam na fila</b>.</p><div class="btnrow"><button class="btn btn-ghost">Cancelar</button><button class="btn btn-danger">Encerrar</button></div></div></figure>
+  <figure><figcaption>Fila do Controle · "pedido por"</figcaption><div class="card">${q}</div></figure>`;
+}
+
+/* ---------------- protótipo: navegação ---------------- */
+function sync(){const u=new URLSearchParams(location.search);u.set('view',st.view);u.set('s',st.view==='stage'?st.ss:st.s);history.replaceState(null,'','?'+u)}
+function fillStates(){const sel=$('#pState'),M=st.view==='stage'?SSTATES:st.view==='guest'?GSTATES:{all:'Todas as variantes'};
+  sel.innerHTML=Object.entries(M).map(([k,v])=>`<option value="${k}">${v}</option>`).join('');sel.value=st.view==='stage'?st.ss:(st.view==='guest'?st.s:'all');
+  $('#pW').style.display=st.view==='guest'?'':'none'}
+function show(v){st.view=v;document.querySelectorAll('.view').forEach(x=>x.classList.toggle('on',x.id==='v-'+v));
+  document.querySelectorAll('[data-view]').forEach(b=>b.setAttribute('aria-pressed',b.dataset.view===v));fillStates();
+  if(v==='stage')stage(st.ss);if(v==='control')control();if(v==='guest')render();sync()}
+document.querySelectorAll('[data-view]').forEach(b=>b.onclick=()=>show(b.dataset.view));
+$('#pState').onchange=e=>{if(st.view==='stage'){st.ss=e.target.value;stage(st.ss);sync()}else if(st.view==='guest'){st.q='';go(e.target.value)}};
+$('#pWidth').onchange=e=>$('#phone').style.setProperty('--pw',e.target.value+'px');
+$('#pTheme').onclick=()=>{const r=document.documentElement,c=r.dataset.theme;r.dataset.theme=c==='light'?'dark':c==='dark'?'':'light';if(!r.dataset.theme)delete r.dataset.theme;$('#pTheme').textContent='Tema: '+(r.dataset.theme==='light'?'claro':r.dataset.theme==='dark'?'escuro':'sistema')};
+st.ss=P.get('view')==='stage'&&P.get('s')||'idle';
+if(P.get('view')!=='stage'&&P.get('s'))st.s=P.get('s');
+if(P.get('w'))$('#phone').style.setProperty('--pw',P.get('w')+'px'),$('#pWidth').value=P.get('w');
+show(P.get('view')||'guest');
+setInterval(()=>{const c=$('#cd');if(c&&+c.textContent>0)c.textContent=+c.textContent-1},1000);
+</script>
+</body>
+</html>

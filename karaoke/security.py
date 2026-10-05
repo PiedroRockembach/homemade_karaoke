@@ -1,10 +1,13 @@
-"""Ponto único de autorização (ADR-0002 §3, ARCHITECTURE §10) e regra de posse (SPEC AC-04.4/AC-05.5, DECISION 0009/0012).
+"""Ponto único de autorização (ADR-0002 §3, ADR-0003 §4, ARCHITECTURE §10) e regra de posse (api.md §0.2).
 
 - `authorize` é dependência **global** do app: valida Host, Origin/Content-Type em mutações, resolve o `Principal`
   e compara o papel com o escopo declarado pela rota. Nenhum handler compara papéis.
-- Rotas declaram escopo com `scope("host")` ou `scope("guest-safe")` (no APIRouter ou na rota). Sem marcador = `host`.
-- `can_remove(actor, resource)` é a política única de remoção: só quem adicionou (`added_by == actor`) remove —
-  **sem exceção para o host**.
+- Rotas declaram escopo com `scope("host")`, `scope("guest-safe")` ou `scope("public")` (no APIRouter ou na rota).
+  Sem marcador = `host` (deny-by-default).
+- Papéis (v0.3): `host` (cliente loopback), `guest` (conexão pelo listener da LAN + cookie válido), `anon`
+  (listener da LAN, sem sessão: só alcança `public`).
+- `can_remove(actor, resource)` é a política única de remoção (DECISION 0006 do ciclo 20261005-0109): o host
+  remove qualquer item; os demais só o que adicionaram (`added_by == actor`).
 """
 
 from __future__ import annotations
@@ -17,22 +20,23 @@ from typing import Any, Literal, Protocol
 from fastapi import Depends, Request
 from fastapi.routing import APIRoute, iter_route_contexts
 
-from karaoke.errors import forbidden, invalid_request, not_owner
+from karaoke.errors import forbidden, guest_session_required, invalid_request, not_owner
 
-Role = Literal["host", "guest"]
-ScopeName = Literal["host", "guest-safe"]
-SCOPES: tuple[str, ...] = ("host", "guest-safe")
+Role = Literal["host", "guest", "anon"]
+ScopeName = Literal["host", "guest-safe", "public"]
+SCOPES: tuple[str, ...] = ("host", "guest-safe", "public")
 MUTATING_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE"})
 
 
 @dataclass(frozen=True)
 class Principal:
     role: Role
-    id: str  # "host" | "g_<n>" (futuro, ADR-0002)
+    id: str  # "host" | "g_<n>" | "anon"
     name: str | None = None
 
 
 HOST = Principal(role="host", id="host")
+ANON = Principal(role="anon", id="anon")
 
 
 # ---- escopo por rota ---------------------------------------------------------
@@ -121,22 +125,40 @@ def _has_body(request: Request) -> bool:
     return "transfer-encoding" in request.headers
 
 
+def _guest_service(request: Request) -> Any:
+    return getattr(request.app.state, "guest", None)
+
+
+def allowed_hosts(request: Request) -> frozenset[str]:
+    """Hosts fixos do loopback ∪ `<ip-lan>:<porta>` só com o modo convidado ligado."""
+    hosts = request.app.state.config.allowed_hosts
+    guest = _guest_service(request)
+    extra = guest.allowed_hosts() if guest is not None else frozenset()
+    return hosts | extra if extra else hosts
+
+
 def resolve_principal(request: Request) -> Principal:
-    """v1: só o ramo host (loopback). [futuro] cookie de convidado → Principal(guest)."""
+    """Loopback → host. Pelo listener da LAN com o modo ligado: cookie válido → guest; senão → anon."""
     if _is_loopback_client(request):
         return HOST
-    raise forbidden("non_loopback_client")
+    guest = _guest_service(request)
+    if guest is None or not guest.accepts_connection(request):
+        raise forbidden("guest_mode_off")
+    session = guest.session_from_request(request)
+    if session is not None:
+        return Principal(role="guest", id=session.id, name=session.name)
+    return ANON
 
 
 async def authorize(request: Request) -> Principal:
-    config = request.app.state.config
+    hosts = allowed_hosts(request)
     # 1. Host header (anti DNS-rebinding)
-    if request.headers.get("host", "").lower() not in config.allowed_hosts:
+    if request.headers.get("host", "").lower() not in hosts:
         raise forbidden("host_not_allowed")
     # 2. Mutações: Origin (anti CSRF) e Content-Type JSON quando há corpo
     if request.method in MUTATING_METHODS:
         origin = request.headers.get("origin")
-        if origin is not None and origin.lower() not in config.allowed_origins:
+        if origin is not None and origin.lower() not in {f"http://{h}" for h in hosts}:
             raise forbidden("origin_not_allowed")
         if _has_body(request):
             ctype = request.headers.get("content-type", "").split(";")[0].strip().lower()
@@ -145,9 +167,12 @@ async def authorize(request: Request) -> Principal:
     # 3. Principal
     principal = resolve_principal(request)
     # 4. Escopo da rota × papel
-    if route_scope(_find_route(request)) == "host" and principal.role != "host":
+    route_scope_name = route_scope(_find_route(request))
+    if route_scope_name == "host" and principal.role != "host":
         raise forbidden("host_only")
-    # 5. Rate limit (no-op v1)
+    if route_scope_name == "guest-safe" and principal.role == "anon":
+        raise guest_session_required()
+    # 5. Rate limit de convidado/anon (o host nunca é limitado)
     limiter: RateLimiter = getattr(request.app.state, "rate_limiter", None) or NoopRateLimiter()
     limiter.check(principal, request)
     request.state.principal = principal
@@ -163,7 +188,7 @@ def current_principal(request: Request) -> Principal:
 
 
 def current_actor(principal: Principal = Depends(current_principal)) -> str:
-    """Id do ator atual (`"host"` na v1). É o valor gravado em `added_by`."""
+    """Id do ator atual (`"host"` ou `"g_<n>"`). É o valor gravado em `added_by`."""
     return principal.id
 
 
@@ -178,9 +203,12 @@ def _added_by(resource: Any) -> str | None:
 
 
 def can_remove(actor: str, resource: Any) -> bool:
-    """Só quem adicionou remove (QueueItem e Song). Sem exceção para o host (DECISION 0012)."""
+    """Política única de remoção (QueueItem e Song), DECISION 0006: o host remove qualquer recurso com dono
+    conhecido (modera a fila); os demais atores só o que eles mesmos adicionaram."""
     owner = _added_by(resource)
-    return bool(actor) and owner is not None and owner == actor
+    if not actor or owner is None:
+        return False
+    return actor == HOST.id or owner == actor
 
 
 def ensure_can_remove(actor: str, resource: Any, resource_id: str | None = None) -> None:

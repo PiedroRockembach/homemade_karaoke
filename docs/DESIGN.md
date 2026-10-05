@@ -3,6 +3,7 @@
 > Autor: ux-designer · Ciclo: `20261003-2339-karaoke` · Protótipo: `design/prototype.html` · Tokens: `design/tokens.css`
 > Histórias cobertas: US-01 … US-07 · Restrições do architect incorporadas (DECISION pós-T-001).
 > **v0.2** (ciclo `20261004-1742-karaoke`, T-002): US-08 e US-09 — ver **§11 Letras e sincronia**.
+> **v0.3** (ciclo `20261005-0109-karaoke`, T-002): US-11 … US-16 — ver **§12 Modo convidado** e `design/prototype-guest.html`.
 
 Como abrir o protótipo: abra `design/prototype.html` direto no navegador (file://, sem rede). A barra preta no topo
 **não faz parte do produto**; ela alterna telas e estados. Também aceita parâmetros, úteis em revisão/screenshot:
@@ -671,3 +672,320 @@ tema claro em surface-2 (3,98): a lista fica sobre `--color-surface`, onde o par
 - O editor usa **seu próprio** `<audio>`/`AudioContext` (instrumental + voz) no Controle; não usa o relógio do Palco.
   Relógio = `audio.currentTime` (com `playbackRate`); destacar linha em `requestAnimationFrame`.
 - Produção sem handlers inline (CSP), como no resto do app; a onda em `<canvas>` com cores lidas dos tokens.
+
+---
+
+## 12. v0.3 — Modo convidado (US-11 … US-16)
+
+> Ciclo `20261005-0109-karaoke` · T-002 · Protótipo: `design/prototype-guest.html` (abre direto, sem rede).
+> Parâmetros do protótipo: `?view=guest|stage|control`, `&s=<tela/estado>` (lista no seletor), `&w=320|390|430`,
+> `&theme=light|dark`, `&still=1`. Três superfícies novas, **nenhuma cor nova**: só tokens de tamanho e as duas cores fixas do QR.
+
+### 12.1 Princípios desta área
+1. **Do QR à fila em 3 toques.** Escanear → nome → (buscar) → **Pedir**. Nada de cadastro, nada de instalar; o nome é o único campo.
+2. **O celular nunca deixa dúvida.** Toda recusa (limite, vídeo longo, QR vencido, festa encerrada) diz o motivo **e** o que fazer;
+   os limites aparecem **antes** do erro (contador "2 de 3 pedidos").
+3. **A TV continua sendo do cantor.** O QR só aparece **entre** músicas; durante a música, nada além da letra.
+
+### 12.2 Mapa
+```
+Palco (TV)                                  Celular /guest#t=<token>                       Controle (PC)
+[Pressione Enter] ┐                         ┌─ token ok ─► [Entrar: nome] ─► [Buscar] ⇄ [Minha fila]
+[Espera]          ├─ QR grande ─ escaneia ─►┤                    │  Pedir ▸ [Folha Confirmar] ─► toast + Minha fila
+[A seguir]        │                         ├─ token inválido/vencido ─► [QR não vale mais]
+[Aguardando prep.]┘                         ├─ sem token e sem sessão ─► [Falta o convite]
+[Tocando/Pausado/Intervalo/Erro] → sem QR   ├─ sessão com cookie válida ─► direto em [Buscar]
+                                            └─ a qualquer momento: 401/403 ─► [Sessão encerrada] / [Modo desligado]
+                                                rede caiu ─► faixa "Reconectando…" ─ 30 s ─► [Sem conexão]
+Controle: card "Modo convidado" (topo da coluna lateral) · chip "Convidados 3" no header · fila com "pedido por <nome>"
+```
+
+### 12.3 Fluxos (caminho feliz)
+**US-11 — Ligar (anfitrião).** Card **Modo convidado** › switch → modal "Ligar o modo convidado?" (aviso de rede) → **Ligar** →
+switch com spinner "Ligando…" (≤ 2 s) → card expande: link copiável, "0 convidados", **Novo QR**, **Encerrar convidados**;
+o Palco mostra o QR na próxima tela entre músicas. Desligar: switch → desliga **sem** confirmação se houver 0 convidados;
+com convidados, mesmo modal de Encerrar ("Desligar e encerrar 3 convidados?").
+**US-12 — Ver o QR.** Palco em Espera/A seguir → QR à direita + "Escaneie para escolher sua música" + URL curta.
+**US-13 — Entrar.** Câmera abre o link → página limpa o fragmento (`history.replaceState`) → tela **Entrar** com o campo
+"Seu nome" → **Entrar na festa** → aba **Buscar**. Recarregar = continua logado (cookie). Nome é lembrado em `localStorage`
+para pré-preencher numa próxima festa (só conveniência; nunca o token).
+**US-14 — Pedir.** Buscar (sem digitar já lista "Prontas para cantar") → digita "evidências" → Enter → seção **Na Biblioteca · Pronta**
+(instantânea) e depois **No YouTube** (skeleton → resultados) → **Pedir** → folha **Confirmar** com "Quem vai cantar?" = meu nome
+(editável) → **Pedir música** → folha fecha, toast "Pedido! Sua vez em 4 músicas · [Ver fila]", contador vira "1 de 3".
+**US-15 — Acompanhar.** Aba **Minha fila**: cartão "Tocando agora", resumo "Sua próxima: X · em 3 músicas", fila completa com os meus
+itens destacados; meu item de YouTube mostra a etapa e a barra de preparo. **Remover** (lixeira) → a linha vira confirmação inline
+"Remover 'X' da fila? [Remover] [Cancelar]" → toast "Removida".
+**US-16 — Anfitrião vê quem pediu.** Itens de convidado na fila do Controle ganham a linha "pedido por Carla" (ícone celular);
+o Palco mostra "Pedido por Carla" no A seguir quando o cantor é outra pessoa.
+
+### 12.4 Celular — `/guest` (320–430 px, mobile-first)
+Estrutura comum (após entrar):
+```
+┌──────────────────────────────┐
+│ ◉ Karaokê        [◯ Ana ▾]   │ header 56 px (logo pequeno · chip com o nome → folha "Trocar nome")
+│ ▮▮▯ 2 de 3 pedidos na fila   │ medidor (só na aba Buscar, quando ≥ 1 pedido) — role="meter"
+├──────────────────────────────┤
+│  conteúdo da aba (rola)      │
+│                              │
+├──────────────────────────────┤
+│ [⌕ Buscar]   [☰ Minha fila 2]│ barra inferior 64 px + safe-area; aba ativa magenta + barra 3 px
+└──────────────────────────────┘
+```
+- Largura do conteúdo = 100 % com gutter 16 px; a partir de 600 px centraliza em 480 px (tablet/desktop não quebra).
+- Tema segue `prefers-color-scheme` (sem botão de tema: menos uma coisa na tela). `<meta name="theme-color">` = `--color-bg`.
+- Fonte base 16 px (evita zoom do iOS em inputs); `touch-action: manipulation`; nada depende de hover.
+- Faixa global **"Reconectando…"** (info, 36 px, abaixo do header, `role="status"`) quando o SSE cai; some ao voltar.
+
+#### G1 Entrar
+```
+┌──────────────────────────────┐
+│           ◉ (logo 64)        │
+│     Bem-vindo à festa!       │ 28 px / 800
+│  Escolha músicas e entre na  │
+│  fila direto do celular.     │
+│                              │
+│ Seu nome                     │ label visível
+│ [ Ana__________________ ]    │ 48 px, autocomplete="nickname", enterkeyhint="go", maxlength 40
+│ Aparece na TV quando for     │ hint muted
+│ sua vez.               3/40  │ contador só a partir de 30
+│ [   Entrar na festa  →     ] │ primária 48 px, largura total
+│ Rede local · nada é enviado  │ legenda subtle com ícone cadeado
+│ para a internet.             │
+└──────────────────────────────┘
+```
+Estados: **vazio** (botão habilitado; ao tocar sem nome → borda danger + "Digite seu nome para entrar.") · **carregando**
+("Entrando…" com spinner, campo `readonly`) · **erro de rede** (callout danger "Não deu para entrar. Confira se você está no Wi-Fi
+da festa. [Tentar de novo]") · **convite inválido no envio** → tela G7.
+
+#### G2 Buscar (aba padrão)
+```
+┌──────────────────────────────┐
+│ [⌕ Música ou artista…    ✕ ] │ type=search 48 px, sticky, enterkeyhint="search"; Enter busca; ✕ limpa
+│ ▮▮▯ 2 de 3 pedidos na fila   │
+│ NA BIBLIOTECA · 2            │ cabeçalho caps 12 px
+│ ▣ Evidências           [Pedir]│ linha 72 px: thumb 64×36 · título (2 linhas) · artista · 4:38
+│   Chitãozinho · 4:38 ✓Pronta │ chip success "Pronta"
+│ ▣ Evidências (ao vivo) [Pedir]│
+│ NO YOUTUBE                   │
+│ ▣ ░░░░░░░░  ░░░░        ░░░ │ skeleton ×4 enquanto carrega (aria-busy)
+│ ▣ Evidências — Karaokê [Pedir]│ chip info "Nova · ~1 min para preparar"
+│ ▣ Medley 1h…   ⚠Vídeo longo  │ sem botão; linha "Só vídeos de até 15 min" (muted)
+└──────────────────────────────┘
+```
+- **Sem busca:** "O que vamos cantar?" + lista **Prontas para cantar (N)** = biblioteca `status=ready`, ordem alfabética, filtrável
+  pelo próprio campo enquanto digita (local, instantâneo). Biblioteca vazia → ícone seta para cima + "Ainda não há músicas prontas. Busque qualquer música acima — ela é preparada em cerca de 1 minuto."
+- **Pedir** = `btn-secondary` 44 px (a primária da tela é a busca; a primária da folha é "Pedir música"). Na Biblioteca, a linha
+  inteira também abre a folha (alvo grande); no YouTube só o botão (evita toque acidental ao rolar).
+- Chips por resultado: `Pronta` (success) · `Nova · ~1 min` (info) · `Preparando 40%` (info, alguém já pediu; pode pedir — entra
+  como "preparando") · `Já na fila` (neutral, informativo; pode pedir de novo) · `Vídeo longo` (warning, sem botão) · `Ao vivo`
+  (danger, sem botão, "Transmissões ao vivo não podem ser cantadas").
+- **Limite atingido (3/3 ou 2 preparos):** medidor fica warning, botões **Pedir** ficam `aria-disabled` (ainda focáveis) e um callout
+  warning fixo no topo explica: "Você já tem 3 músicas na fila — espere uma tocar para pedir outra." / "Você já tem 2 músicas sendo
+  preparadas — espere uma ficar pronta ou peça uma **Pronta**." (no segundo caso só os resultados do YouTube ficam bloqueados).
+- Estados da busca: **carregando** skeleton só na seção YouTube (a Biblioteca responde já) · **nada** "Nada encontrado para 'x'.
+  Tente só o nome do artista." · **erro YouTube** callout dentro da seção: "O YouTube não respondeu. As músicas **Prontas** continuam
+  disponíveis. [Tentar de novo]" · **429** callout warning "Calma! Muitas buscas seguidas. Tente em 8 s" com contagem regressiva
+  (de `Retry-After`) e o botão de busca desabilitado até zerar.
+
+#### G3 Folha Confirmar (bottom sheet, `role="dialog"`)
+```
+┌──────────────────────────────┐
+│            ─────             │ alça
+│ ▣▣▣ Evidências               │ thumb 96×54 · título · artista · 4:38
+│     Chitãozinho & Xororó     │
+│ Quem vai cantar?             │
+│ [ Ana__________________ ]    │ 48 px, pré-preenchido com meu nome, ≤ 40
+│ ⓘ Entra no fim da fila ·     │ info: "sua vez em ~5 músicas" (calculado da fila atual)
+│   sua vez em ~5 músicas      │ nova: "Vai ser preparada antes (cerca de 1 min). Se a vez chegar antes, ela espera."
+│ [ Cancelar ] [ Pedir música ]│ ghost + primária 48 px (primária à direita, maior)
+└──────────────────────────────┘
+```
+- Abre com slide-up 220 ms (`--ease-out`); fundo `--color-overlay`; arrastar para baixo, tocar fora, Esc ou Cancelar fecham;
+  foco inicial no campo **sem** abrir o teclado sozinho no iOS (foco no título da folha; o campo é um toque).
+- **Pedindo…** spinner na primária, campos `readonly`. **Sucesso** → fecha + toast. **Erros na própria folha** (callout acima dos
+  botões, primária vira "Entendi" que fecha): `guest_limit_pending`, `guest_limit_jobs`, `video_too_long` ("Este vídeo tem 1:12:40.
+  Na festa, só vídeos de até 15 min — procure outra versão."), `rate_limited`, rede ("Não deu para pedir. [Tentar de novo]").
+  Cantor vazio → "Diga quem vai cantar." (borda danger).
+
+#### G4 Minha fila
+```
+┌──────────────────────────────┐
+│ TOCANDO AGORA                │
+│ ┃▣ Canção da Estrada  ▂▅▃    │ cartão surface-2, equalizador animado; cantor "Bruno"
+│ ┃  Os Faróis · Bruno         │
+│ ╭ Sua próxima: Evidências ─╮ │ resumo accent-soft: "em 3 músicas" grande (22 px) | "É a sua vez! Vá até o microfone" (success)
+│ ╰──────────────────────────╯ │
+│ PRÓXIMAS · 5                 │
+│ 1 ▣ Luzes de Neon            │ outros: sem ações
+│     Carla                    │
+│ 2 ▣ Dança no Telhado         │
+│     Diego · ⏱ Preparando     │ preparo de outros: só o chip, sem %
+│▌3 ▣ Evidências        [⌫]  │ MEU: barra esquerda 3 px accent + fundo accent-soft + chip "Você"
+│▌    Ana · Sua vez em 3 músicas│
+│▌4 ▣ Garota de Ipanema [⌫]  │ MEU preparando: etapa + barra (info) "Separando voz · 62%"
+│▌    ▓▓▓▓▓▓░░░ Separando voz 62%│
+└──────────────────────────────┘
+```
+- **"Sua vez em N músicas":** N = músicas que ainda vão tocar antes da minha, **contando a que está tocando**. N = 1 → "Você é a
+  próxima!" · minha tocando → "É a sua vez!" (cartão Tocando agora com borda success e chip "Você") · N ≥ 2 → "Sua vez em N músicas".
+  Item meu ainda preparando acrescenta "Se não ficar pronta a tempo, ela espera e entra logo depois."
+- **Remover** (só onde `can_remove = true`): lixeira 44 px `aria-label="Remover Evidências da fila"`. Confirmação **inline** na
+  própria linha (sem modal): "Remover da fila? [Remover] (danger) [Cancelar]"; foco vai para Cancelar; 5 s sem resposta volta ao normal.
+  Sucesso: linha some (collapse 220 ms) + toast "Removida da fila". `403 not_owner` (corrida) → toast "Esse pedido não é seu".
+  Erro de preparo no meu item: chip danger "Não deu para preparar" + linha "Tente outra versão" + lixeira (o anfitrião também vê).
+- Vazio: ícone fila + "A fila está vazia — seja o primeiro!" + **Buscar música** (primária). Nada tocando: cartão "Nada tocando
+  agora" em surface-2. Atualização em tempo real (SSE); itens novos entram com fade 220 ms, sem pular a rolagem.
+- Contador da aba "Minha fila" = nº de pedidos meus pendentes (badge accent); `aria-label="Minha fila, 2 pedidos seus"`.
+
+#### G5 Trocar nome (folha pequena)
+Chip do header → folha "Seu nome" (campo + **Salvar**). Muda o nome da sessão e o cantor **padrão** dos próximos pedidos; pedidos
+já feitos não mudam (texto explica). Precisa de rota (ver 12.9); se o architect não quiser, o chip vira só exibição.
+
+#### G6–G10 Telas de estado (tela cheia, centralizadas, ícone em círculo 72 px + título 22 px + texto + ação)
+| Estado | Ícone | Título | Texto | Ação |
+|---|---|---|---|---|
+| G6 Falta o convite (sem token e sem sessão) | `i-qr` | Falta o convite | Aponte a câmera para o QR que aparece na TV entre as músicas. | — (texto "Já entrou antes? Recarregue esta página.") |
+| G7 QR vencido/inválido (`invite_invalid`) | `i-qr` warning | Este QR não vale mais | Escaneie o QR da TV de novo — ele muda quando o anfitrião gera um novo. | — |
+| G8 Sessão encerrada (`guest_session_ended`) | `i-logout` | O anfitrião encerrou os convidados | Seus pedidos continuam na fila. Para pedir mais, escaneie o QR da TV de novo. | — |
+| G9 Modo desligado (`guest_mode_off`) | `i-wifi-off` | Pedidos pelo celular estão desligados | Peça ao anfitrião para ligar o Modo convidado no computador. | **Tentar de novo** (secundária) |
+| G10 Sem conexão (rede/bind fechado, > 30 s) | `i-wifi-off` danger | Sem conexão com o karaokê | Confira se você está no Wi-Fi da festa. Se o anfitrião desligou o modo convidado, peça para ligar de novo. | **Tentar de novo** (primária) |
+Observação: com bind dinâmico (modo desligado = porta fechada na LAN), o celular vê a página de erro do **próprio navegador** ao
+abrir o link; G9/G10 só aparecem para quem já estava com a página aberta. Isso cumpre AC-11.1 e é aceitável.
+
+#### Toasts do celular
+Base da tela, acima da barra inferior, largura total − 32 px, 5 s, `role="status"`, com ação opcional à direita (≥ 44 px):
+"Pedido! Sua vez em 4 músicas · Ver fila" · "Evidências está pronta para cantar" (meu preparo terminou) · "Removida da fila" ·
+"Você é a próxima! Vá se preparando" (quando N passa a 1; também `navigator.vibrate(200)` se disponível — opcional).
+
+### 12.5 Palco — QR entre músicas
+Aparece em: **Pressione Enter**, **Espera**, **A seguir** (auto e manual) e **Aguardando preparo**. Nunca em Carregando, Tocando,
+Pausado, Intervalo instrumental, Letra indisponível, Modo espelho ou Erro. Entra com fade 700 ms (`--duration-scene`); "Novo QR"
+troca com crossfade 220 ms. Modo desligado → some no mesmo instante.
+
+**Cartão QR** (componente único): fundo `--qr-light` (#fff, mesmo no Palco escuro — módulos escuros sobre fundo claro, nunca invertido, porque vários
+leitores de QR não leem a versão invertida), módulos `--qr-dark`, **zona de silêncio de 4 módulos**, raio `--radius-lg`, sombra `--shadow-3`. Correção de erro **M**.
+Embaixo, fora do cartão: "Escaneie para escolher sua música" (`--stage-title`, branco, 700) e a URL curta
+`192.168.0.12:8765/guest` (`--stage-meta`, `--stage-text-meta`, tabular, sem `http://`).
+- **Espera / Pressione Enter:** duas colunas. Esquerda: logo, "Quem canta primeiro?" e o texto atual; direita: cartão QR
+  **`--stage-qr` = 40 vh** (≥ 25 % ✓). Com o modo ligado o texto da esquerda muda para "Escaneie o QR com o celular e escolha
+  sua música — ou use o Controle no PC".
+```
+┌──────────────────────────────────────────────────────────────────────────┐
+│                                                                          │
+│   ◉ Karaokê                                     ┌──────────────────┐     │
+│   Quem canta primeiro?                          │ ▛▀▜  ▖▗ ▘  ▛▀▜   │     │
+│   Escaneie o QR com o celular e                 │ ▙▄▟ ▚▞▖▘▝  ▙▄▟   │ 40vh│
+│   escolha sua música.                           │ ▗▘▚▖ ▞▘▗▚ ▘▖▗▘   │     │
+│   ou use o Controle no PC                       │ ▛▀▜ ▝▚ ▖▞▘▗ ▚▖   │     │
+│                                                 └──────────────────┘     │
+│                                           Escaneie para escolher sua música
+│                                                192.168.0.12:8765/guest   │
+└──────────────────────────────────────────────────────────────────────────┘
+```
+- **A seguir / Aguardando preparo:** o bloco atual (arte + textos + anel) fica à esquerda (≈ 62 %); à direita o cartão QR
+  **`--stage-qr-sm` = 30 vh** (≥ 25 % ✓) com a legenda em 2 linhas menores (`--stage-meta`). O anel de contagem continua
+  junto do bloco "A seguir" (a contagem é a informação principal). Dicas de teclado continuam embaixo, à esquerda.
+- **Pedido por (Should, AC-16.2):** quando `requested_by_name ≠ singer`, abaixo da pílula do cantor: ícone celular + "Pedido por
+  Carla" (`--stage-meta`, `--stage-text-meta`). Igual → nada (a pílula do cantor basta).
+- Tamanho mínimo absoluto do QR: 220 px (clamp) — legível a ~3 m em 1080p (40 vh = 432 px; 30 vh = 324 px). Para 29×29 módulos +
+  zona de silêncio, 324 px dá ~9 px/módulo.
+
+### 12.6 Controle — card "Modo convidado"
+Posição: **topo da coluna lateral**, acima de Processamento (no layout < 1100 px, logo abaixo das abas). Header ganha chip
+**"Convidados 3"** (info, ícone `i-users`) só com o modo ligado; clique rola/foca o card.
+```
+Desligado (compacto, 72 px)                         Ligado
+┌──────────────────────────────────────┐            ┌──────────────────────────────────────┐
+│ ⧉ Modo convidado              [○  ]  │            │ ⧉ Modo convidado        Ligado [ ●]  │ switch role="switch"
+│ Deixe os convidados pedirem músicas  │            │ ● 3 convidados conectados            │ ponto success pulsando (parado c/ reduced-motion)
+│ pelo celular.                        │            │ Link do convite                      │
+└──────────────────────────────────────┘            │ [http://192.168.0.12:8765/gu…][⧉ Copiar]│ input readonly mono + botão; "✓ Copiado" 2 s
+                                                    │ Rede  [192.168.0.12 · wlan0      ▾] │ só se houver > 1 interface
+                                                    │ ⓘ O QR aparece no Palco entre as     │ legenda muted
+                                                    │   músicas.                           │
+                                                    │ [↻ Novo QR]  [⎋ Encerrar convidados] │ secundária + danger-ghost
+                                                    └──────────────────────────────────────┘
+```
+- **Ligar:** switch → modal 480 px "Ligar o modo convidado?": "Quem estiver nesta rede Wi-Fi e escanear o QR da TV poderá pedir
+  músicas e ver a fila. Use só em **rede doméstica confiável** — não em Wi-Fi público. Nada sai da sua rede." · chip "Desliga
+  sozinho quando você fechar o app". **[Cancelar]** · **[Ligar]** (primária, foco inicial). Enquanto liga: switch com spinner
+  e `aria-busy`. Erro: callout danger no card "Não deu para abrir na rede: <motivo>. [Tentar de novo]" e o switch volta.
+- **Copiar:** `navigator.clipboard` (loopback é contexto seguro) → ícone vira check + "Copiado" 2 s; fallback seleciona o texto.
+  `title`: "O link contém o convite. Compartilhe só com quem está na festa."
+- **Novo QR:** sem confirmação → toast "Novo QR no Palco. Quem já entrou continua conectado." e o link atualiza.
+- **Encerrar convidados:** modal danger "Encerrar 3 convidados? Os celulares saem da festa e o QR atual deixa de valer. As músicas
+  que eles pediram **continuam na fila**." **[Cancelar]** (foco) · **[Encerrar]** (danger). Recomendação: encerrar também gera
+  convite novo (ver 12.9).
+- **Seletor de IP:** `<select>` com "192.168.0.12 · wlan0 (recomendado)", "172.17.0.1 · docker0"…; trocar atualiza QR e link.
+- **Dica de firewall** (callout info, aparece após 60 s ligado com 0 convidados **e** some no 1º convidado):
+  "Ninguém conseguiu entrar? Confira: 1) o celular está no **mesmo Wi-Fi**; 2) o firewall libera a porta **8765**
+  (`sudo ufw allow 8765/tcp` ou `sudo firewall-cmd --add-port=8765/tcp`) — copiar com 1 clique; 3) a rede escolhida acima."
+  Link "Ver no README". Botão **Dispensar**.
+- **Fila do Controle (US-16):** item de convidado ganha 2ª linha de meta: ícone `i-phone` 14 px + "pedido por Carla"
+  (`--color-text-muted`, 12 px). O anfitrião mantém ↑/↓/✕ em todos os itens. Toast quando um convidado pede: "Carla pediu
+  'Evidências'" (agrupa: "3 novos pedidos de convidados" se vierem < 5 s).
+
+### 12.7 Acessibilidade e toque
+- Alvos **≥ 44 px** em `/guest` (`--touch-min`) — botões, lixeira, abas, ✕ do campo. Controle mantém 40 px.
+- Foco visível: mesmo `--focus-ring`. Ordem de foco do celular: header → medidor/callout → busca → resultados → barra inferior;
+  folha prende o foco e devolve ao botão "Pedir" que a abriu.
+- `aria-live="polite"`: resultados, toasts, resumo "Sua vez em N", faixa Reconectando. Alteração de N não é anunciada a cada
+  evento: só quando chega a 1 ("Você é a próxima").
+- Barra inferior: `<nav aria-label="Seções">` com `aria-current="page"`; o meu item na fila: `aria-label="Evidências, cantor Ana,
+  seu pedido, sua vez em 3 músicas"`.
+- Nomes e títulos sempre via `textContent`; truncamento com 2 linhas + `title`.
+- Movimento reduzido: sem slide da folha (aparece), sem equalizador, sem pulso do ponto, sem fade do QR.
+
+**Contraste (pares novos; o resto herda §7/§11.9)**
+| Par | Escuro | Claro |
+|---|---|---|
+| QR `#07050f` / `#ffffff` | 20,24 | 20,24 |
+| texto / linha "meu pedido" (`accent-soft` sobre surface) | 12,27 | 12,80 |
+| muted / linha "meu pedido" | 6,28 | 5,19 |
+| aba ativa `--color-accent` / surface | 5,80 | 5,87 |
+| aba inativa `--color-text-muted` / surface | 8,31 | 7,13 |
+| medidor preenchido accent / trilha surface-3 (componente ≥ 3) | 4,71 | 4,53 |
+| medidor cheio warning / trilha surface-3 | 9,12 | 4,42 |
+| legenda QR branca / `--stage-bg` · meta URL | 20,2 · 10,0 | (Palco sempre escuro) |
+| chip "Você" sólido `--color-on-accent` / `--color-accent` | 6,25 | 5,87 |
+
+Como em §11.9: **não** usar texto magenta pequeno sobre `accent-soft` — por isso o chip "Você" (dentro da linha `accent-soft`) é
+**sólido** (`chip-solid`: fundo accent, texto on-accent), não `chip-accent`.
+
+### 12.8 Componentes novos
+| Componente | Variações | Estados | Notas |
+|---|---|---|---|
+| Bottom nav (guest) | 2 abas com badge | ativa (accent + barra 3 px), focus, pressed | 64 px + `env(safe-area-inset-bottom)` |
+| Bottom sheet | confirmar, trocar nome | abrir/fechar 220 ms, erro (callout) | raio `--radius-xl` só no topo; alça 36×4 |
+| Usage meter | normal, cheio (warning) | — | 3 segmentos; `role="meter"` `aria-valuenow/max` |
+| Guest row (busca) | pronta, nova, preparando, já na fila, longo, ao vivo | pressed (surface-2), disabled | 72 px |
+| Queue row (guest) | outro, meu, meu preparando, meu erro, confirmando remoção | collapse ao sair | barra 3 px accent nos meus |
+| Turn summary | em N, próxima, sua vez (success) | atualiza com fade | |
+| Status screen | G6–G10 | — | reaproveita Empty state grande |
+| QR card | 40 vh, 30 vh | entrar 700 ms, trocar 220 ms | cores fixas `--qr-*` |
+| Guest panel (Controle) | desligado, ligando, ligado, erro, firewall | — | switch existente (`.switch`) |
+| Header chip "Convidados N" | — | hover/focus | `chip-info` como botão |
+
+**Ícones novos** (mesmo set): `i-phone`, `i-users`, `i-qr`, `i-copy`, `i-logout`, `i-lock`, `i-arrow-right`.
+
+**Tokens novos** (`design/tokens.css`, seção v0.3): `--touch-min: 44px`, `--guest-nav-h: 64px`, `--guest-max: 480px`,
+`--qr-light: #ffffff`, `--qr-dark: #07050f`, `--stage-qr: clamp(220px, 40vh, 60vh)`, `--stage-qr-sm: clamp(200px, 30vh, 44vh)`.
+As cores do QR são fixas de propósito (não mudam com tema).
+
+### 12.9 Necessidades de dados (para o architect / contrato)
+1. **Sessão do convidado** (`GET /api/guest/me` ou no `hello` do SSE): `{id, name, limits:{max_pending:3, max_active_jobs:2,
+   max_duration_s:900}, pending_count, active_jobs_count}` — para o medidor e para bloquear antes do erro.
+2. **Itens da fila visíveis ao convidado:** `added_by`, `added_by_name`, `singer`, `status` (`ready|processing|error`), `can_remove`,
+   e para os **meus** itens processando `job_id` (ou `stage`/`progress` embutidos) para a barra; dos outros, só `processing`.
+3. **Códigos de erro distintos:** `invite_invalid` (G7), `guest_session_ended` (G8), `guest_mode_off` (G9),
+   `guest_limit_pending`, `guest_limit_jobs`, `video_too_long`, `live_not_allowed`, `rate_limited` com **`Retry-After`**, `not_owner`.
+4. **Busca para convidado:** cada resultado com `duration_s`, `is_live`, `song_id` se já existe na Biblioteca (para "Pronta"/
+   "Preparando N %"/"Já na fila").
+5. **Estado do modo para o Controle e o Palco:** `{enabled, url, display_url, qr_rev, guests_connected, addresses:[{ip, iface,
+   recommended}], selected_ip, enabled_at}`; evento SSE `guest.updated` para o Palco trocar o QR (≤ 2 s) e o Controle o contador.
+6. **A seguir:** `requested_by_name` no item (para "Pedido por").
+7. **Trocar nome (G5, opcional):** `PATCH /api/guest/me {name}`. Sem isso o chip é só exibição.
+8. **Decisões para o architect:** (a) "Encerrar convidados" deve também **rotacionar o convite** — senão o mesmo QR deixa todos
+   entrarem de novo na hora; (b) a regra atual "remoção só por quem adicionou, sem exceção para o host" (api.md §0.2) conflita com
+   AC-16.1 (o anfitrião remove qualquer item) — precisa da exceção para `host`; (c) a URL curta da TV (sem token) só serve para quem
+   já tem sessão (cookie) — **não** propomos código curto digitável na v0.3.

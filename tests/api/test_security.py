@@ -42,12 +42,22 @@ def test_scope_table_examples(app):
     scopes = {(m, path): declared_scope(r) for path, r in iter_api_routes(app) for m in r.methods}
     assert scopes[("GET", "/api/health")] == "guest-safe"
     assert scopes[("POST", "/api/queue")] == "guest-safe"
-    assert scopes[("DELETE", "/api/queue/{item_id}")] == "host"
+    assert scopes[("DELETE", "/api/queue/{item_id}")] == "guest-safe"  # v0.3 (era host)
     assert scopes[("DELETE", "/api/songs/{song_id}")] == "host"
     assert scopes[("POST", "/api/player/command")] == "host"
     assert scopes[("GET", "/media/songs/{song_id}/vocals.opus")] == "host"
     assert scopes[("GET", "/media/songs/{song_id}/thumb.jpg")] == "guest-safe"
     assert scopes[("GET", "/api/songs/{song_id}/lyrics")] == "host"  # escopo vindo do APIRouter
+    # v0.3: escopo public (ADR-0003 §4)
+    assert scopes[("GET", "/guest")] == "public"
+    assert scopes[("GET", "/static/{path:path}")] == "public"
+    assert scopes[("POST", "/api/guest/session")] == "public"
+    assert scopes[("GET", "/api/guest/session")] == "public"
+    assert scopes[("DELETE", "/api/guest/session")] == "guest-safe"
+    for path in ("/api/guest/enable", "/api/guest/disable", "/api/guest/rotate", "/api/guest/end-sessions"):
+        assert scopes[("POST", path)] == "host"
+    assert scopes[("GET", "/api/guest/state")] == "host"
+    assert scopes[("GET", "/api/guest/qr")] == "host"
 
 
 # ---- Host / Origin / Content-Type / loopback ---------------------------------------------------
@@ -96,21 +106,22 @@ def test_guest_principal_blocked_on_host_route(client, monkeypatch):
 
 
 # ---- regra de posse: can_remove ------------------------------------------------------------------
-def test_can_remove_only_owner():
+def test_can_remove_host_moderates_guest_only_own():
     host_item = {"id": "q_1", "added_by": "host"}
     guest_item = {"id": "q_2", "added_by": "guest:x"}
     assert can_remove("host", host_item)
     assert can_remove("guest:x", guest_item)
     assert not can_remove("guest:x", host_item)
-    # DECISION 0012: sem exceção para o host
-    assert not can_remove("host", guest_item), "host não remove item adicionado por guest:x"
+    assert not can_remove("guest:y", guest_item)
+    # DECISION 0006 (ciclo 20261005-0109): o host modera — remove item de convidado
+    assert can_remove("host", guest_item), "host remove item adicionado por guest:x"
 
 
 def test_can_remove_resource_shapes():
     conn = sqlite3.connect(":memory:")
     conn.row_factory = sqlite3.Row
     row = conn.execute("SELECT 'guest:x' AS added_by").fetchone()
-    assert can_remove("guest:x", row) and not can_remove("host", row)
+    assert can_remove("guest:x", row) and can_remove("host", row) and not can_remove("guest:y", row)
     assert can_remove("host", SimpleNamespace(added_by="host"))
     assert not can_remove("host", {"id": "x"})  # sem dono conhecido → ninguém remove
     assert not can_remove("", {"added_by": ""})
@@ -120,7 +131,7 @@ def test_ensure_can_remove_raises_not_owner():
     from karaoke.errors import ApiError
 
     with pytest.raises(ApiError) as exc:
-        ensure_can_remove("host", {"added_by": "guest:x"}, "q_2")
+        ensure_can_remove("guest:y", {"added_by": "guest:x"}, "q_2")
     assert exc.value.status == 403 and exc.value.code == "not_owner"
 
 
@@ -145,16 +156,13 @@ def owned_client(app, monkeypatch):
 
 def test_http_owner_rule_two_actors(owned_client):
     c, actor, items = owned_client
-    # host tenta remover item do guest:x → 403 not_owner
-    r = c.delete("/api/_test/items/q_2")
-    assert r.status_code == 403 and r.json()["error"]["code"] == "not_owner"
     # guest:x tenta remover item do host → 403 not_owner
     actor["p"] = GUEST_X
     r = c.delete("/api/_test/items/q_1")
     assert r.status_code == 403 and r.json()["error"]["code"] == "not_owner"
-    # cada um remove o seu
-    assert c.delete("/api/_test/items/q_2").status_code == 204
+    # o host modera (DECISION 0006): remove o item do guest:x
     actor["p"] = HOST
+    assert c.delete("/api/_test/items/q_2").status_code == 204
     assert c.delete("/api/_test/items/q_1").status_code == 204
     assert items == {}
 

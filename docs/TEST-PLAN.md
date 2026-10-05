@@ -119,3 +119,36 @@ usuário; os testes abaixo codificam esse comportamento. Arrastar marcadores na 
 
 Rodar só a v0.2: `.venv/bin/python -m pytest -q -m e2e tests/e2e/test_sync_editor_e2e.py` e
 `.venv/bin/deno test --quiet --no-check tests/e2e/test_sync_model_test.js` (ou `make test`, que inclui o JS).
+
+## 6. v0.3 — modo convidado (ciclo `20261005-0109-karaoke`, T-007)
+
+Base: SPEC v0.3 (US-11..US-16), contrato §0.1/§0.2/§12, ADR-0003, DECISION 0006 (o host modera).
+Integração: `tests/api/test_guest_flow.py` roda A1+A2 juntos **sem override do `authorize`** (convidado = cliente
+192.168.1.x pelo `guest_env.lan()`, cookie real); o "SSE" é lido de assinaturas reais do `EventBus`.
+Contrato front×back: `tests/api/test_guest_contract_fe.py` (campos lidos pelo JS existem nas respostas reais).
+Tipos: A = automático (`make test`), N = navegador focado (QA, uma vez), M = manual com celular real (`reports/qa-1.md`).
+
+| Critério | Teste | Tipo |
+|----------|-------|------|
+| AC-11.1 desligado → LAN recusada | `unit/test_guest_listener.py::test_enable_disable_opens_and_closes_socket` · `test_guest_auth.py::test_mode_off_lan_request_forbidden` · `test_guest_flow.py` (início/fim) · N: `curl <ip-lan>` recusado após disable | A + N + M |
+| AC-11.2 ligar sem reiniciar, link e contagem | `test_guest_session.py::test_enable_defaults_to_recommended` · `test_guest_flow.py` · `test_guest_ui_test.js` (card) | A + M |
+| AC-11.3 Novo QR | `test_guest_session.py::test_rotate_invalidates_token_but_keeps_sessions` · `test_guest_flow.py` (token velho 401, sessão viva, `guest.state`) · troca do QR < 2 s: M | A + M |
+| AC-11.4 encerrar/desligar | `test_guest_session.py::test_end_sessions_401_and_rotates`, `::test_disable_ends_everything` · `test_guest_flow.py::test_guest_ended_reaches_guest_stream` · N: tela "O anfitrião encerrou os convidados" | A + N |
+| AC-11.5 reinício → desligado | `test_guest_session.py::test_starts_disabled` (estado só em memória) | A + M |
+| AC-12.1–12.3 QR no Palco (quando aparece) | `test_guest_ui_test.js` (`qrPlacement`) · legibilidade a 3 m: M | A + M |
+| AC-12.4 QR local com IP da LAN | `test_guest_session.py::test_qr_svg` · N: `image/svg+xml`, `no-store`, URL com 192.168.x | A + N |
+| AC-13.1–13.3 entrar, recarregar, QR inválido | `test_guest_session.py::test_session_*` · `test_guest_page_test.js` · N: token sai da URL, cookie `HttpOnly`/`Strict`, reload mantém, token inválido → "Este QR não vale mais" | A + N + M |
+| AC-13.4 mobile, temas, alvos, AA | N: 360 px escuro/claro sem scroll horizontal · Chrome Android/Safari iOS: M | N + M |
+| AC-14.1 Biblioteca antes do YouTube | `test_guest_flow.py` (`library.status`) · `test_guest_page_test.js` (tipo de resultado) | A + M |
+| AC-14.2 pedido "Pronta" | `test_guest_queue.py::test_guest_add_sets_owner_name_and_default_singer` · `test_guest_flow.py` · N: pedido pela UI aparece no host com `added_by_name` | A + N + M |
+| AC-14.3 pedido do YouTube (preparando) | `test_guest_jobs.py` · `test_guest_flow.py` (`requested_by`, `job.updated` só para o dono) · download real: M | A + M |
+| AC-14.4 vídeo longo | `test_guest_jobs.py::test_guest_long_video_not_allowed` · `test_guest_contract_fe.py::test_long_and_rate_limit_details` | A |
+| AC-14.5 cotas e 429 | `test_guest_jobs.py::test_guest_active_jobs_quota` · `test_guest_flow.py` (4º pedido) · `test_guest_contract_fe.py` (429 `search`) | A + M |
+| AC-15.1 fila ao vivo e "Sua vez em N" | `test_guest_flow.py` (SSE do convidado com `queue.updated` personalizado) · `test_guest_page_test.js` (posição) | A + M |
+| AC-15.2 remover só o meu | `test_guest_queue.py` · `test_guest_flow.py` (403 `not_owner`, `can_remove` false no stream) | A + M |
+| AC-15.3 sem settings/sistema/jobs alheios/áudio | `test_guest_auth.py::test_guest_gets_403_on_every_host_route` · `test_guest_flow.py::test_guest_media_thumb_allowed_but_audio_forbidden` · `test_visible_to_filter` | A |
+| AC-16.1 "pedido por" + host remove qualquer item | `test_guest_flow.py` (host remove item de convidado) · `test_guest_ui_test.js` | A + M |
+| AC-16.2 "Pedido por" no "A seguir" | `test_guest_queue.py::test_up_next_has_added_by_name` · `test_guest_contract_fe.py` (`up_next`) · `test_guest_ui_test.js` | A + M |
+| Contrato front×back (campos e eventos) | `test_guest_contract_fe.py` | A |
+
+Rodar só a v0.3: `.venv/bin/python -m pytest -q tests/api/test_guest_*.py tests/unit/test_guest_listener.py tests/unit/test_ratelimit.py tests/unit/test_netinfo.py`.

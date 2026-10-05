@@ -192,6 +192,7 @@ class PlayerService:
                     "queue_item_id": nxt["id"],
                     "song": load_song(conn, nxt["song_id"], actor),
                     "singer": nxt["singer"],
+                    "added_by_name": nxt["added_by_name"],
                     "starts_at": s["up_next"]["starts_at"],
                 }
         return {

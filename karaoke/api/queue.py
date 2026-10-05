@@ -2,6 +2,8 @@
 
 - `POST /api/queue` grava `added_by = actor` (de `current_actor`), nunca do corpo.
 - `DELETE /api/queue/{id}` usa `security.ensure_can_remove(actor, item, item_id)` → `403 not_owner`.
+- v0.3 (T-004): `POST` e `DELETE /{id}` são `guest-safe`; as restrições de convidado (só `end`, `singer` padrão,
+  `added_by_name`, `409 queue_item_playing`) ficam em `karaoke/guest/policy.py`. Sem cotas (DECISION 0016).
 """
 
 from __future__ import annotations
@@ -12,7 +14,7 @@ from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from karaoke.deps import QUEUE_ITEM_ID_PATTERN, SONG_ID_PATTERN, QueueItemId
-from karaoke.security import current_actor, scope
+from karaoke.security import Principal, current_actor, current_principal, scope
 
 router = APIRouter(tags=["queue"])
 
@@ -71,8 +73,8 @@ def get_queue(request: Request, actor: str = Depends(current_actor)) -> dict:
 
 
 @router.post("/api/queue", status_code=201, dependencies=[scope("guest-safe")])
-def add_to_queue(body: QueueAdd, request: Request, actor: str = Depends(current_actor)) -> dict:
-    return request.app.state.queue.add(body.song_id, body.singer, body.position, actor)
+def add_to_queue(body: QueueAdd, request: Request, principal: Principal = Depends(current_principal)) -> dict:
+    return request.app.state.queue.add(body.song_id, body.singer, body.position, principal.id, principal)
 
 
 @router.delete("/api/queue", status_code=204, dependencies=[scope("host")])
@@ -94,9 +96,11 @@ def patch_item(
     return request.app.state.queue.update(item_id, body.singer, actor)
 
 
-@router.delete("/api/queue/{item_id}", status_code=204, dependencies=[scope("host")])
-def remove_item(item_id: QueueItemId, request: Request, actor: str = Depends(current_actor)) -> None:
-    request.app.state.queue.remove(item_id, actor)
+@router.delete("/api/queue/{item_id}", status_code=204, dependencies=[scope("guest-safe")])
+def remove_item(
+    item_id: QueueItemId, request: Request, principal: Principal = Depends(current_principal)
+) -> None:
+    request.app.state.queue.remove(item_id, principal.id, principal)
 
 
 @router.post("/api/queue/{item_id}/move", dependencies=[scope("host")])

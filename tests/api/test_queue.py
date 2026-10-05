@@ -18,6 +18,7 @@ ITEM_KEYS = {
     "song",
     "job",
     "added_by",
+    "added_by_name",
     "can_remove",
     "added_at",
 }
@@ -153,7 +154,7 @@ def test_remove_and_clear(client, app, no_autoplay):
 
 
 def test_remove_owner_rule_two_actors(client, app, actor, no_autoplay):
-    """Só quem adicionou remove — sem exceção para o host (DECISION 0012)."""
+    """O convidado só remove o que adicionou; o host modera e remove qualquer item (DECISION 0006)."""
     seed_song(app, SONG_A)
     host_item = client.post("/api/queue", json={"song_id": SONG_A}).json()
     actor.guest()  # POST /api/queue é guest-safe
@@ -164,18 +165,15 @@ def test_remove_owner_rule_two_actors(client, app, actor, no_autoplay):
     assert items[host_item["id"]]["can_remove"] is False and items[guest_item["id"]]["can_remove"] is True
     actor.host()
     items = {i["id"]: i for i in client.get("/api/queue").json()["items"]}
-    assert items[host_item["id"]]["can_remove"] is True and items[guest_item["id"]]["can_remove"] is False
-    # host não remove item do guest
-    r = client.delete(f"/api/queue/{guest_item['id']}")
-    assert r.status_code == 403 and r.json()["error"]["code"] == "not_owner"
-    # guest não remove item do host (a política é a mesma; a rota é host-only na v1, então chama o serviço)
+    assert items[host_item["id"]]["can_remove"] is True and items[guest_item["id"]]["can_remove"] is True
+    # guest não remove item do host (pela política do serviço)
     from karaoke.errors import ApiError
 
     with pytest.raises(ApiError) as exc:
         app.state.queue.remove(host_item["id"], "guest:x")
     assert exc.value.code == "not_owner"
-    # o dono remove o seu
-    app.state.queue.remove(guest_item["id"], "guest:x")
+    # o host remove o item do guest (modera) e o seu
+    assert client.delete(f"/api/queue/{guest_item['id']}").status_code == 204
     assert client.delete(f"/api/queue/{host_item['id']}").status_code == 204
     assert client.get("/api/queue").json()["items"] == []
 

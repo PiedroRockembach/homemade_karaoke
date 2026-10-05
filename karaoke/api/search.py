@@ -82,6 +82,7 @@ def search(
         results = yt.search(query, limit)
     except yt.YoutubeError as exc:
         raise youtube_api_error(exc) from exc
+    yt.remember_results(results)  # v0.3: metadados do POST /api/jobs de convidado (ADR-0003 §5)
     threshold_ms = long_video_threshold_s(db, config) * 1000
     lib = library_status(db, [r.youtube_id for r in results])
     return {

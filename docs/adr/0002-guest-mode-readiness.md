@@ -1,6 +1,6 @@
 # ADR-0002 — Preparação para o modo convidado (LAN + QR)
 
-- Status: proposto
+- Status: substituído parcialmente por [ADR-0003](0003-guest-mode.md) (2026-10-05) — §1 (LAN via `KARAOKE_HOST`) e os itens "futuro" foram decididos lá; papéis, `authorize` e deny-by-default continuam valendo
 - Data: 2026-10-04
 - Autor: architect · Ciclo: `20261003-2339-karaoke` · Tarefa: T-003 · História: F14 (futuro)
 - Relacionados: [ADR-0001](0001-stack.md), [api.md](../contracts/api.md), [ARCHITECTURE.md §9–10](../ARCHITECTURE.md)

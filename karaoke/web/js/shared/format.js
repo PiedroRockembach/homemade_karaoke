@@ -66,3 +66,33 @@ export function songLabel(song) {
   if (!song) return "";
   return song.artist ? `${song.title} — ${song.artist}` : song.title;
 }
+
+// ---------------------------------------------------------------- v0.3 modo convidado (DESIGN §12)
+
+/** 0 → "Nenhum convidado conectado"; 1 → "1 convidado conectado"; 3 → "3 convidados conectados". */
+export function fmtGuestCount(n) {
+  const v = Math.max(0, Math.floor(Number(n) || 0));
+  if (v === 0) return "Nenhum convidado conectado";
+  return v === 1 ? "1 convidado conectado" : `${v} convidados conectados`;
+}
+
+/**
+ * Opção do seletor de rede (GuestState.addresses[]), como no DESIGN §12.6:
+ * `{address:"192.168.1.4", interface:"wlan0", kind:"wifi", recommended:true}` → "192.168.1.4 · wlan0 (recomendado)".
+ * VPN ganha a marca "(VPN)" (listada, mas nunca recomendada).
+ */
+export function fmtAddress(a) {
+  if (!a) return "";
+  const notes = [a.kind === "vpn" ? "VPN" : "", a.recommended ? "recomendado" : ""].filter(Boolean);
+  const base = a.interface ? `${a.address} · ${a.interface}` : String(a.address || "");
+  return notes.length ? `${base} (${notes.join(", ")})` : base;
+}
+
+/** "Pedido por <nome>" só quando há nome de convidado e ele difere do cantor (DESIGN §12.5, AC-16.2). */
+export function requestedByText(item, prefix = "Pedido por") {
+  const name = item && typeof item.added_by_name === "string" ? item.added_by_name.trim() : "";
+  if (!name) return "";
+  const singer = item.singer ? String(item.singer).trim() : "";
+  if (singer && singer.toLocaleLowerCase("pt-BR") === name.toLocaleLowerCase("pt-BR")) return "";
+  return `${prefix} ${name}`;
+}

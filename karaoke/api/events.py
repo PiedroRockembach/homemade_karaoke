@@ -4,6 +4,11 @@ Ao conectar: `retry`, depois `hello` com o snapshot completo (player, queue, job
 ator da conexão; em seguida os eventos incrementais do EventBus e `: ping` a cada 15 s. Conexões `role=stage` contam
 em `stage.connected` (o player republica `player.state` quando o número muda, em até ~250 ms).
 
+v0.3 (ADR-0003 §5, T-003): `role=guest` é exclusivo de convidados (e convidados só usam `role=guest`; senão
+`403 forbidden`); ≤ 30 conexões de convidado no total e ≤ 3 por convidado (`429 rate_limited {reason: sse_limit}`);
+o `hello` de convidado traz `guest` (GuestMe) e só os jobs ativos dele, sem `settings`/`system`/`guest_state`; o
+`hello` do host inclui `guest_state`. Abrir/fechar SSE de convidado emite `guest.state` (≤ 1/s).
+
 Ganchos opcionais para o T-006 (lidos de `app.state`, se existirem):
 - `jobs_snapshot(actor) -> list[Job]` — jobs ativos no formato do contrato §5 (senão usa `job_to_dict` abaixo);
 - `model_download` — `{model_id, progress}` durante download de modelo (senão `null`).
@@ -16,6 +21,7 @@ import secrets
 import sqlite3
 import threading
 import time
+from collections.abc import AsyncIterator
 from typing import Any
 
 from fastapi import APIRouter, Depends, FastAPI, Query, Request
@@ -24,7 +30,8 @@ from fastapi.responses import StreamingResponse
 
 from karaoke.api.settings import read_settings
 from karaoke.deps import get_bus
-from karaoke.events import ROLES, EventBus, sse_stream
+from karaoke.errors import forbidden
+from karaoke.events import ROLES, EventBus, Subscription, sse_stream
 from karaoke.security import Principal, current_principal, scope
 from karaoke.services.library import ACTIVE_JOB_STAGES
 
@@ -122,22 +129,53 @@ def system_snapshot(app: FastAPI) -> dict[str, Any]:
     }
 
 
-def hello_snapshot(app: FastAPI, client_id: str, actor: str) -> dict[str, Any]:
+def _own_job_ids(conn: sqlite3.Connection, actor: str) -> set[str]:
+    return {r[0] for r in conn.execute("SELECT id FROM jobs WHERE requested_by = ?", (actor,))}
+
+
+def hello_snapshot(
+    app: FastAPI, client_id: str, actor: str, principal: Principal | None = None
+) -> dict[str, Any]:
     conn = app.state.db.connect()
     try:
         jobs_hook = getattr(app.state, "jobs_snapshot", None)
         jobs = jobs_hook(actor) if callable(jobs_hook) else active_jobs(conn)
-        return {
+        base = {
             "server_time": int(time.time() * 1000),
             "client_id": client_id,
+        }
+        guest = getattr(app.state, "guest", None)
+        if principal is not None and principal.role == "guest":
+            own = _own_job_ids(conn, actor)
+            session = next((s for s in guest.sessions() if s.id == actor), None) if guest else None
+            return {
+                **base,
+                "guest": guest.me(session) if session is not None else None,
+                "player": app.state.player.state_conn(conn, actor),
+                "queue": app.state.queue.snapshot_conn(conn, actor),
+                "jobs": [j for j in jobs if j.get("id") in own],
+            }
+        return {
+            **base,
             "player": app.state.player.state_conn(conn, actor),
             "queue": app.state.queue.snapshot_conn(conn, actor),
             "jobs": jobs,
             "settings": read_settings(conn, app.state.config),
             "system": system_snapshot(app),
+            "guest_state": guest.state() if guest is not None else None,
         }
     finally:
         conn.close()
+
+
+async def _guest_stream(bus: EventBus, sub: Subscription, guest: Any) -> AsyncIterator[str]:
+    """`sse_stream` que avisa o GuestService ao abrir/fechar (contagem `connected` em `guest.state`)."""
+    guest.notify_state()
+    try:
+        async for chunk in sse_stream(bus, sub):
+            yield chunk
+    finally:
+        guest.notify_state()
 
 
 @router.get("/api/events")
@@ -149,16 +187,22 @@ async def events(
     principal: Principal = Depends(current_principal),
 ) -> StreamingResponse:
     cid = client_id or f"c_{secrets.token_urlsafe(6)}"
+    guest = getattr(request.app.state, "guest", None)
+    if (role == "guest") != (principal.role == "guest"):
+        raise forbidden("role_mismatch")
+    if principal.role == "guest":
+        guest.ensure_sse_slot(principal)
     sub = bus.subscribe(cid, role, principal)
     try:
         # o snapshot lê o banco e pega o lock de estado: fora do event loop, para não congelar os outros streams
-        snapshot = await run_in_threadpool(hello_snapshot, request.app, cid, principal.id)
+        snapshot = await run_in_threadpool(hello_snapshot, request.app, cid, principal.id, principal)
         bus.send_first(sub, "hello", snapshot)
     except BaseException:
         bus.unsubscribe(sub)
         raise
+    stream = _guest_stream(bus, sub, guest) if principal.role == "guest" else sse_stream(bus, sub)
     return StreamingResponse(
-        sse_stream(bus, sub),
+        stream,
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )

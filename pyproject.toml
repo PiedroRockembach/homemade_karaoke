@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "karaoke"
-version = "0.2.0"
+version = "0.3.0"
 description = "Karaokê local: YouTube -> separação de voz por IA -> letra sincronizada, com Controle e Palco no navegador."
 requires-python = ">=3.12"
 # torch NÃO está aqui: é instalado por scripts/install.sh a partir do índice da PyTorch (cu129 | cpu).
@@ -16,6 +16,7 @@ dependencies = [
     "demucs==4.1.0",
     "faster-whisper~=1.2.1",
     "soundfile~=0.14",
+    "segno~=1.6.6",  # QR do modo convidado (ADR-0003 §3): puro Python, sem dependências
 ]
 
 [project.optional-dependencies]

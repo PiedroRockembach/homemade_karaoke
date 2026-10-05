@@ -39,6 +39,10 @@
           <span class="kbd" aria-hidden="true">/</span>
         </form>
         <div class="header-actions">
+          <button class="chip chip-info guest-chip" id="guest-chip" type="button" hidden>
+            <svg class="icon" aria-hidden="true"><use href="/static/icons.svg#i-users" /></svg><span
+            >Convidados 0</span>
+          </button>
           <button
             class="btn btn-secondary"
             id="btn-stage-top"
@@ -98,12 +102,20 @@
               <span class="chip chip-neutral tnum" id="lib-count" hidden>0</span>
             </button>
           </div>
-          <div id="pane-search" role="tabpanel" aria-labelledby="tab-search" class="panel-body"
-            aria-live="polite"></div>
+          <div id="pane-search" role="tabpanel" aria-labelledby="tab-search" class="panel-body"></div>
+          <p id="search-status" class="sr-only" role="status" aria-live="polite"></p>
           <div id="pane-lib" role="tabpanel" aria-labelledby="tab-lib" class="panel-body" hidden></div>
         </section>
 
-        <aside class="side" aria-label="Processamento e fila">
+        <aside class="side" aria-label="Modo convidado, processamento e fila">
+          <section class="panel guest-panel" id="guest-panel" aria-labelledby="h-guest">
+            <div class="panel-body gp-body" id="guest-body">
+              <div class="gp-head">
+                <h2 id="h-guest">Modo convidado</h2>
+                <span class="gp-status">Carregando…</span>
+              </div>
+            </div>
+          </section>
           <section class="panel" aria-labelledby="h-jobs">
             <div class="panel-head">
               <svg class="icon" aria-hidden="true">

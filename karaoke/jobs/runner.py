@@ -76,6 +76,7 @@ MESSAGES = {
     "canceled": "Cancelado.",
     "internal_error": "Erro inesperado no processamento. Veja o log em data/logs/karaoke.log.",
     "align_failed": "Não foi possível sincronizar a letra pela voz.",
+    "video_too_long": "O vídeo é mais longo do que o permitido para pedidos de convidados.",
 }
 
 LYRICS_MODES = ("aligned", "transcribe", "online")
@@ -335,6 +336,7 @@ class JobRunner:
                 else None
             ),
             "attempts": row["attempts"],
+            "requested_by": row["requested_by"],
             "created_at": row["created_at"],
             "updated_at": row["updated_at"],
         }
@@ -906,11 +908,15 @@ class JobRunner:
         wav = work / "source.wav"
         if not wav.is_file():
             try:
+                # v0.3: job de convidado leva `max_duration_ms` (defesa em profundidade → `video_too_long`)
+                max_ms = (options or {}).get("max_duration_ms")
+                limit = {"max_duration_ms": int(max_ms)} if max_ms else {}
                 src = yt.download_audio(
                     ctx.song_id,
                     work / "dl",
                     progress=lambda f: self._progress(ctx, None if f is None else f * 0.85),
                     cancel=ctx.cancel,
+                    **limit,
                 )
             except yt.DownloadCanceled as exc:
                 raise JobCanceled() from exc

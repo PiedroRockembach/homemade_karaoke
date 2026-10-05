@@ -61,7 +61,7 @@ def test_migration_v1_to_latest_keeps_data(tmp_path):
     conn.close()
 
     database = db.Database(path)
-    assert database.migrate() == db.SCHEMA_VERSION == 3
+    assert database.migrate() == db.SCHEMA_VERSION == 4
     conn = database.connect()
     cand = conn.execute("SELECT * FROM lyrics_candidates").fetchone()
     assert (
@@ -108,7 +108,7 @@ def test_migration_v2_to_v3_accepts_online_plain(tmp_path):
     )
     conn.close()
     database = db.Database(path)
-    assert database.migrate() == 3
+    assert database.migrate() == db.SCHEMA_VERSION
     conn = database.connect()
     assert conn.execute("SELECT derived_from FROM lyrics_candidates").fetchone()[0] == "lrclib:1"
     conn.execute(

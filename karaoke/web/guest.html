@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <meta name="color-scheme" content="dark light">
+    <meta name="theme-color" content="">
+    <meta name="referrer" content="no-referrer">
+    <title>Karaokê — Pedir música</title>
+    <link rel="icon" href="data:,">
+    <link rel="stylesheet" href="/static/css/tokens.css">
+    <link rel="stylesheet" href="/static/css/base.css">
+    <link rel="stylesheet" href="/static/css/guest.css">
+    <script src="/static/js/guest/boot-guard.js"></script>
+    <script type="module" src="/static/js/guest/main.js"></script>
+  </head>
+  <body class="page-guest">
+    <div class="g">
+      <div id="boot" class="screen">
+        <div class="boot" role="status">
+          <svg class="icon spin icon-lg" aria-hidden="true">
+            <use href="/static/icons.svg#i-loader" />
+          </svg>
+          <span>Carregando…</span>
+        </div>
+      </div>
+      <div id="join" class="screen" hidden></div>
+      <div id="status" class="screen" hidden></div>
+
+      <div id="app" class="g-app" hidden>
+        <header class="g-head">
+          <div class="logo"><span class="logo-dot" aria-hidden="true"></span>Karaokê</div>
+          <span class="name-chip" title="Seu nome nesta festa">
+            <svg class="icon icon-sm" aria-hidden="true">
+              <use href="/static/icons.svg#i-user" />
+            </svg>
+            <span class="sr-only">Você entrou como</span>
+            <span id="me-name"></span>
+          </span>
+        </header>
+        <div id="reconn" class="reconn" role="status" hidden>
+          <svg class="icon icon-sm spin" aria-hidden="true"><use href="/static/icons.svg#i-refresh" /></svg>
+          Reconectando…
+        </div>
+        <main id="main" class="g-main">
+          <div id="panel-search" class="panel"></div>
+          <div id="panel-queue" class="panel" hidden></div>
+        </main>
+        <nav class="g-nav" aria-label="Seções">
+          <button type="button" id="tab-search" class="g-tab" aria-current="page">
+            <svg class="icon" aria-hidden="true"><use href="/static/icons.svg#i-search" /></svg>
+            Buscar
+          </button>
+          <button type="button" id="tab-queue" class="g-tab" aria-label="Minha fila">
+            <svg class="icon" aria-hidden="true"><use href="/static/icons.svg#i-list" /></svg>
+            Minha fila
+            <span id="queue-badge" class="badge tnum" aria-hidden="true" hidden></span>
+          </button>
+        </nav>
+      </div>
+
+      <div id="overlay"></div>
+      <noscript>
+        <p class="boot-noscript">Ative o JavaScript do navegador para pedir músicas.</p>
+      </noscript>
+      <div id="toast" class="toast-region" role="status" aria-live="polite"></div>
+    </div>
+  </body>
+</html>

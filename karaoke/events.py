@@ -4,7 +4,10 @@
   `loop.call_soon_threadsafe` quando fora do loop do servidor.
 - Cada conexão SSE tem uma `Subscription` com sua própria `asyncio.Queue`. Assinante lento (fila cheia) é
   desconectado (o EventSource reconecta e recebe novo `hello`).
-- Filtro por principal (futuro modo convidado): `visible_to(subscription, event)` — na v1 sempre True.
+- Filtro por principal (v0.3, ADR-0003 §5): `visible_to(subscription, event)`. Assinaturas `role=guest` recebem só
+  `player.state`, `queue.updated`, `library.updated`, `song.updated` e os `job.*` dos próprios jobs (`job.removed` é
+  resolvido pelo índice id→requested_by mantido pelo bus); `guest.state` (URL com o token) nunca chega a convidados e
+  `guest.ended` só chega a convidados (enviado por `close_role`).
 - `can_remove` por conexão (contrato §0.2): na entrega, `personalize(data, actor)` recalcula `can_remove` em todo
   objeto que tenha `added_by` + `can_remove` (Song, QueueItem) para o ator da assinatura. Quem publica pode montar o
   payload para qualquer ator.
@@ -35,7 +38,11 @@ log = logging.getLogger("karaoke")
 KEEPALIVE_S = 15.0
 RETRY_MS = 1000
 QUEUE_MAX = 1000
-ROLES = ("control", "stage")
+ROLES = ("control", "stage", "guest")
+GUEST_EVENTS = frozenset({"player.state", "queue.updated", "library.updated", "song.updated", "guest.ended"})
+GUEST_JOB_EVENTS = frozenset({"job.updated", "job.removed"})
+HOST_ONLY_EVENTS = frozenset({"guest.state"})
+GUEST_ONLY_EVENTS = frozenset({"guest.ended"})
 
 
 @dataclass(frozen=True)
@@ -70,9 +77,22 @@ def personalize(data: Any, actor: str) -> Any:
     return data
 
 
-def visible_to(sub: Subscription, event: Event) -> bool:
-    """v1: tudo é visível. [futuro] convidado só vê player.state/queue.updated/library.updated/seus jobs."""
-    return True
+def visible_to(sub: Subscription, event: Event, job_owner: str | None = None) -> bool:
+    """Se o evento chega a esta assinatura. `job_owner`: `requested_by` do job de `job.*` (se conhecido)."""
+    if sub.role != "guest":
+        return event.type not in GUEST_ONLY_EVENTS
+    if event.type in GUEST_EVENTS:
+        return True
+    if event.type in GUEST_JOB_EVENTS:
+        return job_owner is not None and job_owner == sub.principal.id
+    return False
+
+
+def _job_owner(data: Any) -> str | None:
+    if isinstance(data, dict):
+        owner = data.get("requested_by")
+        return owner if isinstance(owner, str) else None
+    return None
 
 
 class EventBus:
@@ -83,6 +103,7 @@ class EventBus:
         self._loop: asyncio.AbstractEventLoop | None = None
         self._listeners: list[Callable[[Event], None]] = []
         self._closing = False
+        self._job_owners: dict[str, str] = {}  # job id → requested_by (para `job.removed` de convidado)
 
     # ---- ciclo de vida ---------------------------------------------------------
     def bind_loop(self, loop: asyncio.AbstractEventLoop | None = None) -> None:
@@ -139,6 +160,42 @@ class EventBus:
     def count(self, role: str | None = None) -> int:
         return len(self.subscribers(role))
 
+    def count_principal(self, principal_id: str, role: str | None = None) -> int:
+        return sum(1 for s in self.subscribers(role) if s.principal.id == principal_id)
+
+    def principals(self, role: str | None = None) -> set[str]:
+        """Ids distintos dos principais com assinatura aberta (ex.: convidados conectados)."""
+        return {s.principal.id for s in self.subscribers(role)}
+
+    def close_role(
+        self,
+        role: str,
+        final: tuple[str, Any] | None = None,
+        where: Callable[[Subscription], bool] | None = None,
+    ) -> int:
+        """Encerra as assinaturas de `role` (filtradas por `where`), entregando antes o evento `final` (ex.:
+        `("guest.ended", {"reason": "disabled"})`). Chame no loop do servidor. Devolve quantas fechou."""
+        with self._lock:
+            targets = [s for s in self._subs if s.role == role and (where is None or where(s))]
+            for sub in targets:
+                self._subs.discard(sub)  # sem novas entregas; o stream lê o `final` e depois o None
+        for sub in targets:
+            if final is not None and not sub.closed:
+                event = self.make_event(final[0], personalize(final[1], sub.principal.id))
+                try:
+                    sub.queue.put_nowait(event)
+                except asyncio.QueueFull:
+                    while not sub.queue.empty():
+                        sub.queue.get_nowait()
+                    sub.queue.put_nowait(event)
+            try:
+                sub.queue.put_nowait(None)
+            except asyncio.QueueFull:
+                while not sub.queue.empty():
+                    sub.queue.get_nowait()
+                sub.queue.put_nowait(None)
+        return len(targets)
+
     # ---- publicação ------------------------------------------------------------------
     def make_event(self, type_: str, data: Any) -> Event:
         return Event(next(self._ids), type_, data)
@@ -146,6 +203,11 @@ class EventBus:
     def publish(self, type_: str, data: Any) -> Event:
         """Envia a todos os assinantes. Thread-safe."""
         event = self.make_event(type_, data)
+        if type_ == "job.updated":
+            owner = _job_owner(data)
+            if owner is not None:
+                with self._lock:
+                    self._job_owners[str(data.get("id"))] = owner
         loop = self._loop
         try:
             running = asyncio.get_running_loop()
@@ -190,8 +252,17 @@ class EventBus:
 
     def _deliver(self, event: Event) -> None:
         per_actor: dict[str, Event] = {}
+        job_owner = None
+        if event.type in GUEST_JOB_EVENTS:
+            job_owner = _job_owner(event.data)
+            if job_owner is None and isinstance(event.data, dict):
+                with self._lock:
+                    job_owner = self._job_owners.get(str(event.data.get("id")))
+            if event.type == "job.removed" and isinstance(event.data, dict):
+                with self._lock:
+                    self._job_owners.pop(str(event.data.get("id")), None)
         for sub in self.subscribers():
-            if not visible_to(sub, event):
+            if not visible_to(sub, event, job_owner):
                 continue
             actor = sub.principal.id
             if actor not in per_actor:

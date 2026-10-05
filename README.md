@@ -67,7 +67,9 @@ Para parar: `Ctrl+C` no terminal. A fila, a posição da música e os jobs em an
 
 ## Como usar numa sessão
 
-1. **Buscar**: na aba *Buscar* do Controle, digite artista ou música e aperte Enter. Atalho: `/` foca a busca.
+1. **Buscar**: na aba *Buscar* do Controle, digite artista ou música. Os resultados aparecem **enquanto você digita**:
+   a Biblioteca filtra na hora e o YouTube busca quando você para de digitar (a partir de 3 letras). Enter busca na
+   hora e `Esc` limpa. Atalho: `/` foca a busca.
 2. **Preparar e enfileirar**: no resultado, clique em *Preparar e enfileirar* e informe quem vai cantar. A música aparece
    em *Processamento* (Baixando, Separando voz, Buscando letra) e entra na fila quando ficar pronta.
    *Só preparar* deixa a música pronta na Biblioteca sem colocá-la na fila.
@@ -78,6 +80,102 @@ Para parar: `Ctrl+C` no terminal. A fila, a posição da música e os jobs em an
 5. Reordene a fila arrastando pela alça, com os botões ↑/↓ ou com `Alt+↑/↓`. `Del` remove (com *Desfazer*).
 
 As músicas preparadas ficam na **Biblioteca** e tocam na hora, sem internet, nas próximas vezes.
+
+## Modo convidado (festa)
+
+Os convidados escaneiam um QR code na TV e pedem músicas pelo próprio celular, sem instalar nada. Todos precisam
+estar no **mesmo Wi-Fi** que o PC.
+
+### Como ligar
+
+1. Rode `make start` normalmente.
+2. No Controle, no card **Modo convidado**, ligue o interruptor e confirme em **Ligar**. Não é preciso reiniciar a
+   app. O card mostra o link do convite (com *Copiar*) e quantos convidados estão conectados.
+3. O **QR code aparece no Palco entre as músicas**: na tela de espera, no "Pressione Enter", no "A seguir" e no
+   "Aguardando preparo". Durante a música ele some.
+4. O convidado escaneia o QR, digita o nome e já pode pedir.
+
+Se o PC estiver em mais de uma rede (cabo e Wi-Fi, por exemplo), o card mostra um seletor: escolha a rede em que os
+celulares estão. Trocar de rede desconecta quem já tinha entrado.
+
+### O que o convidado pode fazer
+
+- Buscar na Biblioteca (músicas prontas, que tocam na hora) e no YouTube. Os resultados aparecem enquanto digita: a
+  Biblioteca filtra na hora e o YouTube responde logo depois que a pessoa para de digitar (a partir de 3 letras).
+- Pedir músicas para o **fim da fila**, com o próprio nome ou o de outra pessoa como cantor.
+- Ver a fila e a música atual ao vivo, a posição ("Sua vez em N") e o progresso das próprias músicas novas.
+- Remover os **próprios** pedidos.
+
+O convidado **não** controla o player, não reordena a fila, não remove pedidos dos outros e não mexe em letras nem em
+configurações. Na fila do Controle e no "A seguir" do Palco aparece "pedido por <nome>", e você, o anfitrião, pode
+remover qualquer pedido.
+
+**Regras:** os pedidos entram sempre no **fim da fila** e vídeos com mais de **15 min** não podem ser pedidos pelo
+convidado. Para evitar spam, há um limite de frequência: cerca de 30 buscas por minuto (com folga para rajadas) e
+pedidos muito seguidos esperam alguns segundos. Se a busca passar do limite, aparece "Muitas buscas — de novo em N s",
+os resultados ficam na tela e a busca é refeita sozinha. Não há limite de músicas por convidado.
+
+### Novo QR × Encerrar convidados
+
+- **Novo QR** troca o convite. O QR antigo para de funcionar, mas quem já entrou continua conectado. Use se o QR foi
+  parar onde não devia (uma foto num grupo, por exemplo).
+- **Encerrar convidados** desconecta todo mundo. Os pedidos continuam na fila. Para voltar, cada um escaneia o QR de
+  novo.
+- Desligar o interruptor encerra os convidados e fecha o acesso pela rede.
+
+### Liberar a porta no firewall
+
+O celular acessa a mesma porta da app, a que aparece no terminal (`8765` por padrão). Se essa porta estiver ocupada,
+a app usa a próxima livre (8766, 8767…), e aí é essa que precisa ser liberada. Para a porta não mudar entre uma festa
+e outra, fixe-a com `KARAOKE_PORT=8765 make start`.
+
+Muitas distribuições não ativam firewall nenhum, e aí não há nada a fazer. Se ninguém conseguir entrar em 60 s, o
+card mostra o comando certo para o seu sistema, com o botão *Copiar comando*.
+
+**ufw** (Ubuntu, Mint, Pop!_OS…):
+
+```sh
+sudo ufw allow 8765/tcp          # libera
+sudo ufw delete allow 8765/tcp   # fecha depois da festa
+```
+
+**firewalld** (Fedora, openSUSE…):
+
+```sh
+sudo firewall-cmd --add-port=8765/tcp      # libera até reiniciar o PC ou o firewalld
+sudo firewall-cmd --remove-port=8765/tcp   # fecha
+```
+
+Para deixar liberado de forma permanente (vale depois de reiniciar):
+
+```sh
+sudo firewall-cmd --permanent --add-port=8765/tcp && sudo firewall-cmd --reload      # libera
+sudo firewall-cmd --permanent --remove-port=8765/tcp && sudo firewall-cmd --reload   # fecha
+```
+
+Troque `8765` pela porta que aparece no terminal, se for outra. Com o modo convidado desligado, a app não escuta na
+rede, mesmo com a porta liberada.
+
+### Segurança
+
+Use o modo convidado só na sua rede de casa, com gente de confiança. A conexão é HTTP simples, sem criptografia
+(TLS). O modo volta a ficar desligado toda vez que a app reinicia.
+
+### Solução de problemas do modo convidado
+
+| Sintoma | Solução |
+|---------|---------|
+| O celular fica **"carregando" infinitamente** e a página nunca abre | Quase sempre é o **firewall** do PC descartando as conexões (o `ufw` faz isso sem avisar). Libere a porta que aparece no terminal: `sudo ufw allow <porta>/tcp` (ex.: `sudo ufw allow 8765/tcp`). Para outros firewalls, veja [Liberar a porta no firewall](#liberar-a-porta-no-firewall). |
+| `ERR_ADDRESS_UNREACHABLE`, ou funciona por um tempo e depois para de responder | 1. O **Wi-Fi do PC com economia de energia** derruba as conexões que chegam. Desligue até reiniciar: `sudo iw dev wlan0 set power_save off` (troque `wlan0` pelo nome da sua placa, veja em `iw dev`). Para desligar de vez, crie `/etc/NetworkManager/conf.d/wifi-powersave-off.conf` com as linhas `[connection]` e `wifi.powersave = 2` e reinicie o NetworkManager: `sudo systemctl restart NetworkManager`. 2. Confira se o celular não caiu para os **dados móveis** ou para **outra rede** (rede de convidados, 5 GHz de outro roteador). 3. Veja se o roteador tem **isolamento de clientes** ligado (linha abaixo). |
+| O celular não abre a página ("não foi possível conectar") | 1. Confira se o celular está no **mesmo Wi-Fi** que o PC, e não nos dados móveis. 2. Libere a porta no firewall (veja acima). 3. Se o PC estiver em mais de uma rede, escolha no seletor do card a rede dos celulares. 4. Desligue a VPN do PC ou do celular. |
+| Funciona no PC, mas nenhum celular conecta, mesmo com o firewall liberado | O celular pode estar numa **rede de convidados** do roteador ou com o **isolamento de clientes** (*AP isolation*, *client isolation*) ligado. Essas opções impedem um aparelho de falar com outro. Conecte os celulares à rede principal ou desligue o isolamento no roteador. |
+| "Este QR não vale mais" | Alguém clicou em *Novo QR*. Escaneie o QR que está na TV agora. |
+| "O anfitrião encerrou os convidados" | Alguém clicou em *Encerrar convidados* ou desligou o modo. Escaneie o QR de novo. |
+| Depois de reiniciar a app, o QR antigo não abre mais | É esperado: a cada início o modo convidado volta **desligado** e o convite (QR) muda. Ligue o modo de novo no Controle e peça para todos escanearem o QR novo da TV. |
+| Tela "Não consegui abrir a página neste navegador" | A página do convidado não carregou nesse celular. Toque em *Tentar de novo*. Se continuar, tire uma foto do quadro *Detalhes do erro* (traz a mensagem e a versão do navegador) e teste em outro navegador. Em navegadores muito antigos aparece "Navegador muito antigo". |
+| Página em branco ou erro quando muita gente abre o QR ao mesmo tempo | Recarregue a página no celular. Acontece só com cerca de 10 celulares abrindo no mesmo instante. |
+| "Muitas buscas — de novo em N s" ou "Calma! … Tente em N s" | Limite anti-spam (cerca de 30 buscas por minuto; pedidos muito seguidos). Na busca, os resultados ficam e ela se refaz sozinha; no pedido, espere a contagem terminar. |
+| O QR não aparece no Palco | Ele só aparece entre as músicas e com o modo ligado. Confira o card no Controle. |
 
 ## Letras e sincronia
 
@@ -223,6 +321,10 @@ Para restaurar, extraia o arquivo dentro da pasta do projeto, com a app parada.
 - A forma de onda do editor carrega a voz da música inteira na memória do navegador (cerca de 20 a 40 MB para uma
   música de 4 min).
 - Ainda não dá para arrastar os marcadores na forma de onda com o mouse. Use o teclado ou os botões ±10 / ±100 ms.
+- Modo convidado: com cerca de 10 celulares abrindo a página no mesmo instante, alguns podem ficar com a página em
+  branco. Basta recarregar (veja a [solução de problemas do modo convidado](#solução-de-problemas-do-modo-convidado)).
+- O tempo de preparo com GPU (~10–25 s) foi medido antes de o alinhamento da letra pela voz (Whisper) ficar sempre
+  ligado. Com ele, pode demorar um pouco mais.
 - Quando não há letra oficial, o texto vem do Whisper e pode ter palavras erradas ou perder o primeiro verso. Cole a
   letra oficial pelo menu *Letra*.
 
@@ -261,13 +363,8 @@ As letras vêm do [LRCLIB](https://lrclib.net), um banco aberto de letras sincro
 
 ## Privacidade
 
-O servidor escuta só em `127.0.0.1`, então nenhum outro aparelho da rede consegue acessá-lo. A app só se conecta
-à internet para falar com o YouTube (busca e download), o LRCLIB (letras) e o Hugging Face (download dos modelos
-no 1º uso). Não há telemetria.
-
-## Futuro: modo convidado (QR code)
-
-Uma próxima versão deve permitir que os convidados escaneiem um QR code no Palco e adicionem músicas à fila pelo
-celular. Isso exige abrir o acesso pela rede local, e a arquitetura já está preparada para isso
-(`docs/adr/0002-guest-mode-readiness.md`). Nesta versão (0.2.0) o acesso pela rede fica **desligado de propósito**:
-`KARAOKE_HOST=0.0.0.0` é recusado.
+Por padrão, o servidor escuta só em `127.0.0.1`, então nenhum outro aparelho da rede consegue acessá-lo. A rede
+local só passa a ter acesso enquanto o [modo convidado](#modo-convidado-festa) estiver ligado, e mesmo assim só à
+página do convidado e ao que ela usa (o Controle, as configurações e os áudios continuam só no PC). Nada sai da sua
+rede: os convidados conversam direto com o seu PC. A app só se conecta à internet para falar com o YouTube (busca e
+download), o LRCLIB (letras) e o Hugging Face (download dos modelos no 1º uso). Não há telemetria.
