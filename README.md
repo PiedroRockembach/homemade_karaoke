@@ -37,6 +37,15 @@ Leva de 2 a 10 minutos, dependendo da internet. Depois, se quiser, confira se es
 make doctor
 ```
 
+## Atalho na área de trabalho
+
+- **Linux**: `./karaoke.sh --criar-atalho` cria o ícone "Karaokê" na área de trabalho e no menu de aplicativos.
+  Clicar nele abre um terminal que roda `make install` (só na 1ª vez) e depois `make start`.
+- **Windows** (via WSL, já que a app só roda em Linux): no `cmd`, dentro desta pasta, rode `karaoke.bat --criar-atalho`.
+  Precisa de WSL com `make`, `python3`, `python3-venv` e `ffmpeg` instalados.
+
+Para forçar uma nova instalação: `./karaoke.sh --reinstalar` ou `karaoke.bat --reinstalar`.
+
 ## Rodar
 
 ```sh
