@@ -39,6 +39,20 @@ def get_song(song_id: SongId, request: Request, actor: str = Depends(current_act
     return request.app.state.library.get(song_id, actor)
 
 
+@router.get("/api/songs/{song_id}/pitch", dependencies=[scope("guest-safe")])
+def get_song_pitch_route(song_id: SongId, request: Request) -> dict:
+    from karaoke.lyrics.pitch import get_song_pitch
+
+    config = request.app.state.config
+    song_dir = config.songs_dir / song_id
+    if not song_dir.is_dir():
+        from karaoke.services.library import song_not_found
+
+        raise song_not_found(song_id)
+    notes = get_song_pitch(song_dir)
+    return {"song_id": song_id, "notes": notes}
+
+
 @router.patch("/api/songs/{song_id}", dependencies=[scope("host")])
 def patch_song(
     song_id: SongId, body: SongPatch, request: Request, actor: str = Depends(current_actor)

@@ -31,6 +31,52 @@ export function firewallHintVisible(gs, enabledSinceMs, nowMs, dismissed) {
   return nowMs - enabledSinceMs >= FIREWALL_HINT_AFTER_MS;
 }
 
+export const WINDOWS_NETWORK_COMMAND = "karaoke.bat --configurar-rede";
+const DIAG_SEVERITY_ORDER = { warning: 0, info: 1 };
+
+/** ADR-0006: o app roda dentro do WSL (o firewall que importa é o do Windows). */
+export function isWslPlatform(gs) {
+  return Boolean(gs && typeof gs.platform === "string" && gs.platform.startsWith("wsl"));
+}
+
+/**
+ * Comandos da dica de firewall (ADR-0006 §6). `windows: true` quando o conserto é no Windows
+ * (`firewall_hint.tool == "windows"` ou plataforma WSL sem dica); senão os comandos do Linux.
+ */
+export function firewallHintCommands(gs) {
+  const hint = gs && gs.firewall_hint;
+  const windows = hint ? hint.tool === "windows" : isWslPlatform(gs);
+  if (hint && hint.command) return { windows, commands: [hint.command] };
+  if (windows) return { windows, commands: [WINDOWS_NETWORK_COMMAND] };
+  const port = (gs && gs.port) || "";
+  return { windows, commands: [`sudo ufw allow ${port}/tcp`, `sudo firewall-cmd --add-port=${port}/tcp`] };
+}
+
+/**
+ * `diagnostics[]` prontos para a UI: só itens com `code` e `message`, sem `code` repetido,
+ * avisos antes de informações (ordem do servidor mantida dentro de cada grupo).
+ */
+export function visibleDiagnostics(gs) {
+  const list = gs && Array.isArray(gs.diagnostics) ? gs.diagnostics : [];
+  const seen = new Set();
+  const out = [];
+  for (const d of list) {
+    if (!d || typeof d.code !== "string" || !d.code || typeof d.message !== "string" || !d.message) continue;
+    if (seen.has(d.code)) continue;
+    seen.add(d.code);
+    out.push({
+      code: d.code,
+      severity: d.severity === "warning" ? "warning" : "info",
+      message: d.message,
+      command: typeof d.command === "string" && d.command ? d.command : null,
+    });
+  }
+  return out
+    .map((d, i) => ({ d, i }))
+    .sort((a, b) => DIAG_SEVERITY_ORDER[a.d.severity] - DIAG_SEVERITY_ORDER[b.d.severity] || a.i - b.i)
+    .map((x) => x.d);
+}
+
 /** Itens novos de convidado na fila (comparando com os ids já vistos). Atualiza `seen`. */
 export function newGuestRequests(seen, queue) {
   const items = (queue && queue.items) || [];
@@ -85,7 +131,8 @@ const ui = {
   fwTimer: 0,
   copied: false,
   copiedTimer: 0,
-  copiedCmd: false,
+  copiedCmd: null, // chave do comando copiado ("fw" ou "diag:<code>")
+  copiedCmdTimer: 0,
   lastKey: "",
 };
 const seenQueueIds = new Set();
@@ -100,8 +147,12 @@ export function initGuestPanel(opts) {
     card: document.getElementById("guest-panel"),
     body: document.getElementById("guest-body"),
     chip: document.getElementById("guest-chip"),
+    live: null,
   };
   if (!els.card) return;
+  // Região viva fora do corpo re-renderizado: anuncia "copiado" sem depender dos nós trocados.
+  els.live = h("p", { class: "sr-only", "aria-live": "polite", "aria-atomic": "true" });
+  els.card.append(els.live);
   els.chip.addEventListener("click", () => {
     els.card.scrollIntoView({ block: "nearest", behavior: "smooth" });
     const sw = els.card.querySelector(".switch");
@@ -364,15 +415,39 @@ async function copyLink() {
   render();
 }
 
-async function copyCommand(cmd) {
-  if (await copyText(cmd, null)) {
-    ui.copiedCmd = true;
-    render();
-    setTimeout(() => {
-      ui.copiedCmd = false;
-      render();
-    }, COPIED_MS);
+function announce(text) {
+  if (!els.live) return;
+  els.live.textContent = "";
+  // Troca em outro quadro para leitores de tela anunciarem mesmo texto repetido.
+  requestAnimationFrame(() => {
+    if (els.live) els.live.textContent = text;
+  });
+}
+
+function selectNodeText(node) {
+  const sel = globalThis.getSelection && globalThis.getSelection();
+  if (!node || !sel) return;
+  const range = document.createRange();
+  range.selectNodeContents(node);
+  sel.removeAllRanges();
+  sel.addRange(range);
+}
+
+async function copyCommand(cmd, key, btn) {
+  if (!(await copyText(cmd, null))) {
+    const code = btn && btn.closest("[data-cmd-row]") && btn.closest("[data-cmd-row]").querySelector("code");
+    selectNodeText(code);
+    toast("Não deu para copiar sozinho — o comando ficou selecionado: use Ctrl+C.", { level: "info" });
+    return;
   }
+  ui.copiedCmd = key;
+  announce("Comando copiado.");
+  clearTimeout(ui.copiedCmdTimer);
+  ui.copiedCmdTimer = setTimeout(() => {
+    ui.copiedCmd = null;
+    render();
+  }, COPIED_MS);
+  render();
 }
 
 function focusSwitch() {
@@ -524,6 +599,8 @@ function offContent(gs) {
       ),
     );
   }
+  const diag = diagnosticsSection(gs);
+  if (diag) out.push(diag);
   return out;
 }
 
@@ -611,6 +688,8 @@ function onContent(gs) {
       ),
     );
   }
+  const diag = diagnosticsSection(gs);
+  if (diag) out.push(diag);
   if (firewallHintVisible(gs, ui.enabledSince, Date.now(), ui.fwDismissed)) out.push(firewallCallout(gs));
   out.push(
     h(
@@ -655,14 +734,96 @@ function onContent(gs) {
   return out;
 }
 
+/** Comando em `<code>` + botão Copiar; `key` identifica qual mostra "Copiado". */
+function commandRow(cmd, key, label) {
+  const copied = ui.copiedCmd === key;
+  return h(
+    "div",
+    { class: "gp-cmd", dataset: { cmdRow: "" } },
+    h("code", { translate: "no" }, cmd),
+    h(
+      "button",
+      {
+        class: "btn btn-ghost btn-sm",
+        type: "button",
+        "aria-label": copied ? `${label}: copiado` : `${label}: ${cmd}`,
+        dataset: { focusKey: `guest:cmd:${key}` },
+        onclick: (e) => copyCommand(cmd, key, e.currentTarget),
+      },
+      icon(copied ? "check" : "copy", "icon-sm"),
+      copied ? "Copiado" : "Copiar",
+    ),
+  );
+}
+
+/** ADR-0006 §6: dicas detectáveis pelo backend, sob o seletor de rede. */
+function diagnosticsSection(gs) {
+  const items = visibleDiagnostics(gs);
+  if (!items.length) return null;
+  const hasWarning = items.some((d) => d.severity === "warning");
+  return h(
+    "section",
+    { class: "gp-diag", "aria-labelledby": "guest-diag-h" },
+    h("h3", { class: "gp-label", id: "guest-diag-h" }, hasWarning ? "Atenção na rede" : "Sobre a rede"),
+    h(
+      "ul",
+      { class: "gp-diag-list" },
+      items.map((d) =>
+        h(
+          "li",
+          { class: ["callout", d.severity], dataset: { code: d.code } },
+          icon(d.severity === "warning" ? "alert" : "info", "icon-sm"),
+          h(
+            "div",
+            { class: "gp-diag-body" },
+            h(
+              "p",
+              {},
+              h("span", { class: "sr-only" }, d.severity === "warning" ? "Aviso: " : "Info: "),
+              d.message,
+            ),
+            d.command
+              ? [
+                d.command.startsWith("karaoke.bat")
+                  ? h("p", { class: "gp-muted" }, "Rode no Windows, na pasta do Karaokê:")
+                  : null,
+                commandRow(d.command, `diag:${d.code}`, "Copiar comando"),
+              ]
+              : null,
+          ),
+        )
+      ),
+    ),
+  );
+}
+
 function firewallCallout(gs) {
   const port = gs.port || "";
-  const hint = gs.firewall_hint;
-  const cmds = hint && hint.command ? [h("code", {}, hint.command)] : [
-    h("code", {}, `sudo ufw allow ${port}/tcp`),
-    " ou ",
-    h("code", {}, `sudo firewall-cmd --add-port=${port}/tcp`),
-  ];
+  const { windows, commands } = firewallHintCommands(gs);
+  const fwItem = windows
+    ? h(
+      "li",
+      {},
+      "o ",
+      h("b", {}, "Firewall do Windows"),
+      " libera a porta ",
+      h("b", { class: "tnum" }, String(port)),
+      " — rode no Windows, na pasta do Karaokê:",
+      commandRow(commands[0], "fw", "Copiar comando"),
+    )
+    : h(
+      "li",
+      {},
+      "o firewall libera a porta ",
+      h("b", { class: "tnum" }, String(port)),
+      ": ",
+      commands.length === 1 ? commandRow(commands[0], "fw", "Copiar comando") : [
+        h("code", {}, commands[0]),
+        " ou ",
+        h("code", {}, commands[1]),
+        ";",
+      ],
+    );
   return h(
     "div",
     { class: "callout info gp-fw" },
@@ -674,26 +835,20 @@ function firewallCallout(gs) {
       h(
         "ol",
         {},
-        h("li", {}, "o celular está no ", h("b", {}, "mesmo Wi-Fi"), ";"),
-        h("li", {}, "o firewall libera a porta ", h("b", { class: "tnum" }, String(port)), ": ", cmds, ";"),
+        h("li", {}, "o celular está no ", h("b", {}, "mesmo Wi-Fi"), " (não nos dados móveis);"),
+        fwItem,
+        windows
+          ? h(
+            "li",
+            {},
+            "nenhum antivírus com firewall próprio (Kaspersky, ESET, Norton, Avast…) bloqueia a porta;",
+          )
+          : null,
         h("li", {}, "a rede escolhida", (gs.addresses || []).length > 1 ? " acima" : "", "."),
       ),
       h(
         "div",
         { class: "callout-acts" },
-        hint && hint.command
-          ? h(
-            "button",
-            {
-              class: "btn btn-ghost",
-              type: "button",
-              dataset: { focusKey: "guest:fwcopy" },
-              onclick: () => copyCommand(hint.command),
-            },
-            icon(ui.copiedCmd ? "check" : "copy"),
-            ui.copiedCmd ? "Copiado" : "Copiar comando",
-          )
-          : null,
         h(
           "button",
           {

@@ -626,3 +626,82 @@ def test_align_job_with_search_and_nothing_found_falls_back_to_whisper(env):
     runner.run_pending()
     assert runner.job_dict(jid)["lyrics_source"] == "whisper"
     assert [c["source"] for c in cands_of(db)] == ["whisper"]
+
+
+# ---- ADR-0005: fontes extras de letra no pipeline (provedores falsos, sem rede) ------------------------------
+class _FakeProvider:
+    def __init__(self, name, result=None, error=None):
+        self.name, self.result, self.error, self.calls = name, result or [], error, 0
+
+    def search(self, track, artist):
+        self.calls += 1
+        if self.error:
+            raise self.error
+        return list(self.result)
+
+    def close(self):
+        pass
+
+
+def _vagalume_hit():
+    from karaoke.lyrics_providers import PlainLyrics
+
+    # mesmo texto da fixture PLAIN (o Whisper falso canta essas palavras); nomes da música do add_job
+    return PlainLyrics(
+        "vagalume", "vagalume:queen/bohemian-rhapsody", "Bohemian Rhapsody", "Queen", None, PLAIN.split("\n")
+    )
+
+
+def test_process_uses_vagalume_text_as_alignment_base(env):  # AC-22.1
+    runner, config, db, bus, state = env
+    state["lrclib"] = lrclib_transport(search=[])
+    v, o = _FakeProvider("vagalume", [_vagalume_hit()]), _FakeProvider("lyricsovh")
+    runner._providers_factory = lambda settings: [v, o]
+    jid = add_job(runner, db)
+    runner.run_pending()
+    assert runner.job_dict(jid)["lyrics_source"] == "aligned"
+    assert v.calls == 1 and o.calls == 0  # parou no 1º com resultado
+    by = {c["source"]: c for c in cands_of(db)}
+    assert set(by) == {"online_plain", "aligned"}
+    assert json.loads(by["online_plain"]["meta_json"])["provider"] == "vagalume"
+    assert json.loads(by["aligned"]["meta_json"])["provider"] == "vagalume"
+    assert by["aligned"]["derived_from"] == by["online_plain"]["id"]
+
+
+def test_process_provider_error_falls_back_to_whisper(env):  # AC-22.4
+    from karaoke.lyrics_providers import ProviderNetworkError
+
+    runner, config, db, bus, state = env
+    state["lrclib"] = lrclib_transport(search=[])
+    runner._providers_factory = lambda settings: [
+        _FakeProvider("vagalume", error=ProviderNetworkError("timeout")),
+        _FakeProvider("lyricsovh", error=RuntimeError("bug")),
+    ]
+    jid = add_job(runner, db)
+    runner.run_pending()
+    job = runner.job_dict(jid)
+    assert job["stage"] == "done" and job["lyrics_source"] == "whisper"
+
+
+def test_process_extra_sources_disabled_calls_no_provider(env):  # AC-22.5
+    from karaoke.api.settings import write_settings
+    from karaoke.lyrics_providers import build_providers
+
+    runner, config, db, bus, state = env
+    state["lrclib"] = lrclib_transport(search=[])
+    with db.tx() as conn:
+        write_settings(conn, {"extra_lyrics_sources": False})
+    seen = []
+    runner._providers_factory = lambda settings: seen.append(settings) or build_providers(settings)
+    jid = add_job(runner, db)
+    runner.run_pending()
+    assert seen and seen[0]["extra_lyrics_sources"] is False
+    assert runner.job_dict(jid)["lyrics_source"] == "whisper"
+
+
+def test_lrclib_candidate_records_provider(env):
+    runner, config, db, bus, state = env
+    jid = add_job(runner, db, options={"lyrics_mode": "online"})
+    runner.run_pending()
+    assert runner.job_dict(jid)["lyrics_source"] == "lrclib"
+    assert {json.loads(c["meta_json"]).get("provider") for c in cands_of(db)} == {"lrclib"}

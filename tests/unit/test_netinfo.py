@@ -46,6 +46,7 @@ def test_build_addresses_recommends_default_route_source():
         "interface": "enp6s0",
         "kind": "ethernet",
         "recommended": False,
+        "bind_address": None,
     }
 
 

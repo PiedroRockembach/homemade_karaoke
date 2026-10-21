@@ -989,3 +989,77 @@ As cores do QR são fixas de propósito (não mudam com tema).
    entrarem de novo na hora; (b) a regra atual "remoção só por quem adicionou, sem exceção para o host" (api.md §0.2) conflita com
    AC-16.1 (o anfitrião remove qualquer item) — precisa da exceção para `host`; (c) a URL curta da TV (sem token) só serve para quem
    já tem sessão (cookie) — **não** propomos código curto digitável na v0.3.
+
+
+---
+
+## 13. Ciclo v0.4 — Pontuação, Guia de Notas e QR Code Contínuo
+
+### 13.1 Palco — QR Code Contínuo durante a Música
+Quando o modo convidado estiver ativo (`enabled == true`), o QR Code permanece visível durante a reprodução da música (`playing`), posicionado no canto inferior direito da tela (`--stage-qr-mini`: 110×110 px), com cantos arredondados (`--radius-md`), fundo protetor translúcido escuro (`rgba(7, 5, 15, 0.85)`), borda sutil e texto "Peça pelo celular" com a URL.
+- Não obstrui a letra da música (a área de letras reserva margem à direita ou a posição inferior direita fica desimpedida).
+- Nas telas de intervalo (`idle`, `upnext`, `prep`, `start`), o QR Code volta automaticamente à versão de destaque (`--stage-qr`).
+- Ao desativar o modo convidado no Controle, o QR mini desaparece imediatamente com fade out.
+
+### 13.2 Palco — Régua de Melodia (Pitch Roll) e Barras de Notas
+
+Quando a opção de pontuação estiver ativada (`settings.scoring_enabled == true`) e a música contiver dados de melodia
+(`pitch.json`):
+
+- **Área de Notas**: renderizada acima da linha de letra atual no Palco (canvas com altura de **28vh**).
+- **Letra com pontuação ligada** (classe `.stage.scoring-on`): a letra encolhe para dar espaço às barras —
+  `--stage-line-current: clamp(2.25rem, 6vh, 7.5rem)`, `--stage-line-next: clamp(1.5rem, 3.8vh, 4.5rem)`,
+  `--stage-line-gap: 2vh`. Modo clássico (pontuação desligada ou sem `pitch.json`) inalterado. Motivo: barras pequenas
+  demais com 18vh (pedido do usuário).
+- **Barras de Notas**: barras horizontais com cantos arredondados representando as notas musicais esperadas. A cor base
+  é um tom ciano/índigo brilhante (`#38bdf8`), com contraste alto sobre o fundo escuro do Palco.
+- **Linha do Tempo (Now)**: linha vertical fina marcando o instante exato da reprodução.
+- **Rastro do Cantor (Voz ao vivo)**: círculo com rastro luminoso (glow) desenhado na **altura real** cantada, sem
+  dobra de oitava para a nota alvo. Movimento **contínuo** (atualizado a cada quadro, sem degraus de semitom): glissando
+  desliza, vibrato ondula de leve em torno da nota.
+  - **Ao calar**: o ponto fica parado ~120 ms e some com fade de ~150 ms (`opacity`); nada pontua nesse intervalo.
+  - **Fora da faixa visível**: o ponto fica preso na borda da régua como anel vazado (indica "acima"/"abaixo"), nunca
+    rebatido para outra oitava.
+  - `prefers-reduced-motion`: sem rastro; o fade vira corte simples.
+- **Feedback de Acerto**:
+  - Só quando |cantado − alvo| ≤ **±50 cents** (valor contínuo, na oitava da régua; sem equivalência de oitava), a barra
+    acende com partículas douradas e pulso de luz (`#facc15` / `#4ade80`). Meio tom fora ou uma oitava acima/abaixo
+    não acende.
+  - Efeito sonoro sutil opcional ou visual puro ("Ótimo!", "Perfeito!", multiplicador de combo).
+- **Placar**:
+  - Exibido no topo à direita do Palco: `★ 0000 PONTOS`.
+  - Incremento suave e número grande com fonte tabular (`font-variant-numeric: tabular-nums`).
+- **Cálculo da pontuação** (independe do FPS):
+  - Proporcional ao tempo de nota cantado afinado: taxa base `10000 / T`, com T = tempo total de notas (mínimo 20 s).
+  - Combo medido em **segundos** afinados seguidos (enche em 2 s), com peso de 0,9 a 1. Pausa entre notas mantém o
+    combo; errar durante uma nota zera. 100% afinado fica perto de 10.000 sem passar.
+  - Seek para trás não pontua de novo o trecho já cantado.
+- **Cartão de Resultado Final** (pontuação 0 a 10.000 pts + mensagem temática, ex.: "Afinação Impecável!"):
+  - **Com próxima música**: o cartão não ganha cena própria. Aparece como **faixa compacta no topo da cena "A seguir"**
+    (`★ Pontuação Final 8.540 — …`), sem véu escuro, sem cobrir o próximo cantor nem o anel da contagem. Dura
+    `min(4 s, contagem − 1 s)`; se o resultado for < 1,5 s, a faixa é omitida.
+  - **Sem próxima música** (cena de espera): cartão em tela cheia por 4 s.
+  - Fecha ao entrar outra cena (inclusive Enter / "começar já"), ao desligar a pontuação, se um seek desfizer o fim ou
+    ao fim do prazo.
+  - Leitores de tela: a pontuação final é anunciada por `[data-announce]`; o cartão visual fica `aria-hidden` para não
+    ser lido duas vezes.
+
+### 13.3 Controle e Atalhos
+- **Controle (`/`)**: No modal de Configurações, card com switch "Pontuação e guia de notas" com descrição: "Avalia a afinação do cantor pelo microfone e exibe as barras de notas no Palco".
+- **Palco (`/stage`)**: Atalho de teclado `S` (Score) para ligar e desligar a pontuação instantaneamente, exibindo aviso no HUD ("Pontuação: Ativada" / "Pontuação: Desativada").
+- Ao desligar: fecha o microfone e oculta a régua de notas e o placar, voltando ao modo clássico do Palco.
+- **Palco: tecla `O` (Oitava)**: desloca a régua em ciclo 0 → −1 → +1 → 0 oitava, para quem canta mais grave ou
+  mais agudo que a gravação. As barras são redesenhadas na oitava escolhida e a pontuação compara com elas.
+  - Aviso no HUD: "Régua: 1 oitava abaixo" / "Régua: 1 oitava acima" / "Régua: oitava original".
+  - Quando ≠ 0, **rótulo discreto** no canto superior esquerdo da régua ("−1 oitava" / "+1 oitava"), texto pequeno em
+    `--color-text-muted`, sem fundo chamativo; some quando volta a 0.
+  - O valor persiste neste Palco (`localStorage`, com try/catch) e vale para as próximas músicas.
+- **Ajuda de atalhos do Palco**: inclui as linhas `S` — "Liga/desliga a pontuação" e `O` — "Muda a oitava da régua
+  (0 / −1 / +1)".
+
+### 13.4 Tokens Novos
+- `--stage-qr-mini: clamp(90px, 14vh, 130px)`
+- `--stage-note-bar: #38bdf8`
+- `--stage-note-hit: #facc15`
+- `--stage-note-perfect: #4ade80`
+- `--stage-pitch-trail: #ec4899`

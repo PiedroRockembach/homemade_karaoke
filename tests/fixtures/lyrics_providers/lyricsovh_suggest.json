@@ -1,0 +1,4 @@
+{"data": [
+  {"id": 111, "title": "Melodia Azul (Ao Vivo)", "duration": 300, "artist": {"name": "Cover Ficticio"}},
+  {"id": 424242, "title": "Melodia Azul", "duration": 266, "artist": {"name": "Grupo Ficticio"}}
+], "total": 2}

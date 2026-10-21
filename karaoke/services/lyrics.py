@@ -28,6 +28,7 @@ from karaoke.jobs.runner import (
     song_payload,
 )
 from karaoke.lyrics import align, builder
+from karaoke.lyrics.titleclean import clean_channel
 
 log = logging.getLogger("karaoke")
 
@@ -63,6 +64,16 @@ def lrclib_unavailable() -> ApiError:
     )
 
 
+def all_sources_unavailable() -> ApiError:
+    """ADR-0005: busca manual com fontes extras ligadas e todas falharam por rede (AC-23.3)."""
+    return ApiError(
+        502,
+        "network_unavailable",
+        "Não foi possível falar com LRCLIB, Vagalume e lyrics.ovh. A busca de letras exige internet.",
+        {"reason": "all_sources_unavailable"},
+    )
+
+
 SOURCE_LABELS = {
     "aligned": "Online · sincronizada pela voz",
     "whisper": "Extraída da voz (sem letra oficial)",
@@ -71,6 +82,12 @@ SOURCE_LABELS = {
     "manual": "Manual",
 }
 PLAIN_MANUAL_LABEL = "Colada · só texto"
+# ADR-0005 §2: rótulo da `online_plain` por provedor (ausente no meta = lrclib)
+PROVIDER_PLAIN_LABELS = {
+    "lrclib": "Online · só texto",
+    "vagalume": "Vagalume · só texto",
+    "lyricsovh": "lyrics.ovh · só texto",
+}
 # candidatas cujo texto pode ser sincronizado pela voz (texto oficial; CR-001)
 TEXT_SOURCES = ("lrclib", "online_plain", "manual", "aligned")
 MAX_TIMING_LINES = 2000
@@ -84,9 +101,15 @@ def candidate_summary(row: sqlite3.Row) -> dict[str, Any]:
     label = SOURCE_LABELS.get(row["source"], row["source"])
     if row["source"] == "manual" and text_only:
         label = PLAIN_MANUAL_LABEL
+    provider = (
+        (meta.get("provider") or "lrclib") if row["source"] in ("lrclib", "online_plain", "aligned") else None
+    )
+    if row["source"] == "online_plain":
+        label = PROVIDER_PLAIN_LABELS.get(provider, label)
     out: dict[str, Any] = {
         "id": row["id"],
         "source": row["source"],
+        "provider": provider,
         "label": label,
         "timing": row["timing"],
         "official_text": row["source"]
@@ -408,34 +431,63 @@ class LyricsService:
         return {"candidate": candidate_summary(row), "job": job}
 
     def search(self, song_id: str, track_name: str | None, artist_name: str | None) -> dict[str, Any]:
+        """Busca manual (ADR-0005 `exhaustive=True`): LRCLIB e, se ligadas, todas as fontes extras."""
+        from karaoke.api.settings import get_lyrics_provider_settings
+        from karaoke.lyrics_providers import build_providers, chain
+
         conn = self.db.connect()
         try:
             song = self._song_row(conn, song_id)
-            known = {
-                json.loads(r["meta_json"] or "{}").get("provider_id")
-                for r in conn.execute(
-                    "SELECT meta_json FROM lyrics_candidates WHERE song_id = ? AND source IN ('lrclib','online_plain')",
-                    (song_id,),
-                )
-            }
+            known: set[Any] = set()
+            known_prints: set[str] = set()
+            for r in conn.execute(
+                "SELECT source, meta_json FROM lyrics_candidates WHERE song_id = ? "
+                "AND source IN ('lrclib','online_plain','manual')",
+                (song_id,),
+            ):
+                meta = json.loads(r["meta_json"] or "{}")
+                if r["source"] != "manual":
+                    known.add(meta.get("provider_id"))
+                known_prints.add(chain.fingerprint(meta.get("preview") or []))
         finally:
             conn.close()
         track = (track_name or "").strip() or song["title"]
-        artist = (artist_name or "").strip() or song["artist"]
-        client = self._client()
+        artist = (artist_name or "").strip() or song["artist"] or clean_channel(song["channel"])
+        settings = get_lyrics_provider_settings(self.db, self.app.state.config)
+        factory = getattr(self.app.state, "lyrics_providers_factory", None) or build_providers
+        providers = factory(settings)
+        client: lrclib.LrclibClient | None = None
         try:
-            records = lrclib.find_candidates(
-                client, track, artist, song["duration_ms"], song["original_title"]
+            client = self._client()
+            found = chain.search_lyrics(
+                client,
+                providers,
+                track,
+                artist,
+                song["duration_ms"],
+                song["original_title"],
+                exhaustive=True,
+                known=known,
+                known_prints=known_prints,
             )
-        except lrclib.LrclibUnavailableError as exc:
-            log.warning("LRCLIB indisponível: %s", exc)
-            raise lrclib_unavailable() from exc
-        except lrclib.LrclibNetworkError as exc:
-            log.warning("sem conexão com o LRCLIB: %s", exc)
-            raise network_unavailable() from exc
         finally:
-            client.close()
-        new = [c for r in records if r.id not in known and (c := lrclib_candidate(r, song["duration_ms"]))]
+            if client is not None:
+                client.close()
+            chain.close_all(providers)
+        if found.lrclib_error is not None and not providers:  # fontes extras desligadas: comportamento atual
+            exc = found.lrclib_error
+            if isinstance(exc, lrclib.LrclibUnavailableError):
+                log.warning("LRCLIB indisponível: %s", type(exc).__name__)
+                raise lrclib_unavailable() from exc
+            log.warning("sem conexão com o LRCLIB: %s", type(exc).__name__)
+            raise network_unavailable() from exc
+        if providers and found.all_network_failed():
+            log.warning("busca de letra: todas as fontes falharam por rede %s", found.status)
+            raise all_sources_unavailable()
+        new = [
+            c for r in found.records if r.id not in known and (c := lrclib_candidate(r, song["duration_ms"]))
+        ]
+        new += [chain.plain_candidate(p) for p in found.extra]
         with self.db.tx() as conn:
             self._song_row(conn, song_id)
             if new:
@@ -450,7 +502,7 @@ class LyricsService:
                 conn.close()
             if s is not None:
                 self.bus.publish("song.updated", s)
-        return {"added": len(new), "candidates": result["candidates"]}
+        return {"added": len(new), "candidates": result["candidates"], "sources": found.status}
 
     # ---- v0.2: sincronizar pela voz, editor manual, detectar offset ------------------------------------
     def _text_base(

@@ -36,7 +36,7 @@ from karaoke.errors import (
     rate_limited,
 )
 from karaoke.events import Subscription
-from karaoke.guest import netinfo
+from karaoke.guest import netinfo, winnet
 from karaoke.guest.listener import LanListener
 from karaoke.guest.netinfo import LanAddress
 from karaoke.guest.qr import qr_svg
@@ -102,14 +102,17 @@ class GuestService:
         discover: Callable[[], list[LanAddress]] = netinfo.discover,
         listener: Any = None,
         clock: Callable[[], float] = time.time,
+        net: winnet.NetEnvironment | None = None,
     ):
         self.app = app
         self.config = app.state.config
         self.discover = discover
+        self.net = net if net is not None else winnet.NetEnvironment()
         self.listener = listener if listener is not None else LanListener(app)
         self.clock = clock
         self.enabled = False
-        self.address: str | None = None
+        self.address: str | None = None  # anunciado: URL, QR, Host header
+        self.bind_address: str | None = None  # onde o listener abre (≠ address só em wsl-nat, ADR-0006 §5.4)
         self.invite: GuestInvite | None = None
         self.error: dict[str, str] | None = None
         self._sessions: dict[bytes, GuestSession] = {}
@@ -136,7 +139,7 @@ class GuestService:
         if not self.enabled or not self.address:
             return False
         server = request.scope.get("server")
-        return bool(server) and server[0] == self.address
+        return bool(server) and server[0] == (self.bind_address or self.address)
 
     def session_from_request(self, request: Request) -> GuestSession | None:
         value = request.cookies.get(COOKIE_NAME)
@@ -180,16 +183,31 @@ class GuestService:
 
     # ---- estado ---------------------------------------------------------------------------------------
     def addresses(self) -> list[LanAddress]:
+        """Candidatos (no WSL, ajustados pela sonda do Windows em cache — ADR-0006 §5.3)."""
         try:
-            return list(self.discover())
+            discovered = list(self.discover())
         except Exception:  # noqa: BLE001
             log.exception("falha ao listar as interfaces de rede")
-            return []
+            discovered = []
+        try:
+            return self.net.candidates(discovered)
+        except Exception:  # noqa: BLE001
+            log.exception("falha ao ajustar os candidatos para o WSL")
+            return discovered
 
     def state(self) -> dict[str, Any]:
         """`GuestState` (api.md §12.1) — só para o host (contém a URL com o token)."""
         on = self.enabled and self.invite is not None
         invite = self.invite if on else None
+        self.net.schedule_refresh()
+        addresses = self.addresses()
+        try:
+            platform = self.net.platform()
+            diagnostics = self.net.diagnostics(addresses, self.address if on else None, self.port)
+            hint = self.net.firewall_hint(self.port)
+        except Exception:  # noqa: BLE001
+            log.exception("falha ao montar o diagnóstico de rede")
+            platform, diagnostics, hint = "linux", [], netinfo.firewall_hint(self.port)
         return {
             "enabled": on,
             "url": invite.url if invite else None,
@@ -201,8 +219,10 @@ class GuestService:
             "connected": len(self.app.state.bus.principals("guest")) if on else 0,
             "address": self.address if on else None,
             "port": self.port,
-            "addresses": [a.to_dict() for a in self.addresses()],
-            "firewall_hint": netinfo.firewall_hint(self.port),
+            "addresses": [a.to_dict() for a in addresses],
+            "firewall_hint": hint,
+            "platform": platform,
+            "diagnostics": diagnostics,
             "error": self.error,
         }
 
@@ -388,21 +408,31 @@ class GuestService:
                 )
             if address is None:
                 address = next((a.address for a in candidates if a.recommended), candidates[0].address)
-            if self.enabled and self.address == address and self.listener.running:
+            chosen = next(a for a in candidates if a.address == address)
+            bind = chosen.bind_address or address
+            if (
+                self.enabled
+                and self.address == address
+                and self.bind_address == bind
+                and self.listener.running
+            ):
                 return self.state()
             if self.enabled:  # troca de IP: as sessões caem (o cookie é por host)
                 await self._turn_off("disabled")
-            self.enabled, self.address = True, address
+            self.enabled, self.address, self.bind_address = True, address, bind
             self._new_invite()
             try:
-                await self.listener.start(address, self.port)
+                await self.listener.start(bind, self.port)
             except ApiError as exc:
-                self.enabled, self.address, self.invite = False, None, None
+                self.enabled, self.address, self.bind_address, self.invite = False, None, None, None
                 self.error = {"code": exc.code, "message": exc.message}
                 self.publish_state()
                 raise
             self.error = None
-            log.info("modo convidado ligado em %s:%s", address, self.port)
+            if bind != address:
+                log.info("modo convidado ligado em %s:%s (escutando em %s)", address, self.port, bind)
+            else:
+                log.info("modo convidado ligado em %s:%s", address, self.port)
             self.publish_state()
             return self.state()
 
@@ -423,6 +453,7 @@ class GuestService:
             self._sessions.clear()
         self.invite = None
         self.address = None
+        self.bind_address = None
         self._qr_cache = None
         await self.listener.stop()
 
@@ -481,6 +512,7 @@ class GuestService:
 
     async def start(self) -> None:
         self._timer = asyncio.create_task(self._run_timer(), name="guest-timer")
+        self.net.schedule_refresh()  # 1ª sonda do Windows no startup, em background (só no WSL)
 
     async def stop(self) -> None:
         if self._timer is not None:
@@ -494,6 +526,7 @@ class GuestService:
         with self._lock:
             self._sessions.clear()
         self.invite = None
+        await self.net.stop()
         await self.listener.stop()
 
 

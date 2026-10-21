@@ -49,6 +49,7 @@ Princípios:
 | `karaoke/services/lyrics.py` | Candidatas, seleção, LRC manual, parse LRC/Enhanced LRC → formato JSON, offset. |
 | `karaoke/youtube.py` | Busca (`ytsearchN:` com `extract_flat`), download de áudio, proxy/cache de thumbnails. |
 | `karaoke/lrclib.py` | Cliente LRCLIB (`/api/get`, `/api/search`), limpeza de título, ranking por duração. |
+| `karaoke/lyrics_providers/` | ADR-0005: fontes extras de **texto puro** (`vagalume.py` API/página, `lyricsovh.py`) atrás de `Provider.search(track, artist) -> list[PlainLyrics]`, e `chain.search_lyrics` — ponto único que encadeia LRCLIB → Vagalume → lyrics.ovh, usado pelo `JobRunner` e por `LyricsService.search`. |
 | `karaoke/jobs/runner.py` | Fila serial persistida (tabela `jobs`); executa etapas; publica progresso; cancelamento; retomada. |
 | `karaoke/jobs/worker.py` | Entrada do subprocesso de IA: `subprocess.Popen([python, -m, karaoke.jobs.worker, task.json])` com ambiente explícito (`cuda_env` + `model_env` + `HF_HUB_OFFLINE=1`). Progresso e resultado = **uma linha JSON por evento no stdout**. Cancelamento = `terminate()`; o worker sai sozinho se o pai morrer (watchdog de `getppid`). Ver ADR-0001, notas FIX-002. |
 | `karaoke/system.py` | Detecção de GPU/CUDA, modelos baixados, ffmpeg, yt-dlp, Deno, espaço em disco. |
@@ -81,6 +82,10 @@ POST /api/jobs ─► jobs(stage=queued) ─► JobRunner (1 por vez)
   │                  float32 16 kHz mono → array numpy; o PyAV não é usado)
   │                  → linhas com palavras (timing "word")
   │               Falha de rede no LRCLIB ≠ erro do job: cai no Whisper.
+  │               ADR-0005: sem registro LRCLIB de duração aceitável (e com `extra_lyrics_sources`),
+  │                  `chain.search_lyrics` tenta Vagalume e depois lyrics.ovh (para no 1º que bate no
+  │                  nome); o texto vira candidata `online_plain` (meta.provider) e segue o mesmo
+  │                  alinhamento pela voz. Sem conexão: desiste na hora; erro/timeout: próxima fonte.
   ▼
 [finalizing]      ffmpeg wav → instrumental.opus, vocals.opus (libopus 160k)
   │               move atômico data/tmp/<job>/ → data/songs/<song_id>/   (rename no mesmo FS)

@@ -22,6 +22,11 @@ import { createKeyHandler } from "./keys.js";
 import { LyricsRenderer } from "./lyrics-renderer.js";
 import { GuestQr } from "./guest-qr.js";
 import { Screens } from "./screens.js";
+import { PitchRoll } from "./pitch-roll.js";
+import { MicPitch } from "./mic-pitch.js";
+import { checkPitchHit, noteAt, Scorer } from "./scorer.js";
+import { PitchSmoother } from "./pitch-smooth.js";
+import { nextOctaveShift, octaveShiftLabel, parseOctaveShift } from "./pitch-roll.js";
 
 const TICK_MS = 500; // report tick (contrato §9: 2 Hz)
 const SEEK_TOLERANCE_S = 1.0; // diferença servidor × engine que caracteriza um seek
@@ -30,6 +35,10 @@ const CLAIM_RETRY_MS = 3000;
 const OFFLINE_GRACE_MS = 1500;
 const CURSOR_IDLE_MS = 3000;
 const SONG_STATUSES = new Set(["loading", "playing", "paused"]);
+const OCTAVE_KEY = "karaoke.stage.octaveShift"; // deslocamento da régua, por Palco (US-27)
+const FINAL_CARD_MS = 4000; // cartão de pontuação final (DESIGN §13.2)
+const FINAL_CARD_MIN_MS = 1500; // menos que isso de contagem: não vale mostrar o cartão
+const MIC_KEEP_STATUSES = new Set(["loading", "playing", "paused", "up_next"]); // microfone segue aberto entre faixas
 
 const mediaKey = (song) => song.id + "@" + ((song.media && song.media.version) || 0);
 
@@ -44,6 +53,29 @@ class Stage {
     this.hud = new Hud(this.root.querySelector(".hud"));
     this.renderer = new LyricsRenderer(this.root.querySelector("[data-lyrics]"));
     this.help = this.root.querySelector("[data-help]");
+
+    this.pitchRoll = new PitchRoll(
+      this.root.querySelector("[data-pitch-canvas]"),
+      this.root.querySelector("[data-pitch-box]"),
+    );
+    this.pitchNote = this.root.querySelector("[data-pitch-note]");
+    this.mic = new MicPitch();
+    this.scorer = new Scorer(this.root);
+    this.pitchCache = new Map();
+    /** notas da faixa atual: status "loading" | "ok" | "none" (sem notas ou falha — nunca bloqueia o áudio) */
+    this.pitch = { itemId: null, songId: null, status: "none", notes: [] };
+    this.smoother = new PitchSmoother();
+    this.octaveShift = 0;
+    try {
+      this.octaveShift = parseOctaveShift(localStorage.getItem(OCTAVE_KEY));
+    } catch { /* sem armazenamento: começa na oitava original */ }
+    this.pitchRoll.setOctaveShift(this.octaveShift);
+    this.lastFrameAt = performance.now();
+    this.scoringOptimistic = null; // {v, t}: valor do atalho S até o servidor confirmar
+    this.lastScoringOn = false;
+    this.scoringGen = 0; // só a resposta do último S limpa o valor otimista
+    /** cartão final pendente/visível: {itemId, points, until: number|null} */
+    this.finalCard = null;
 
     this.unlocked = false;
     this.isOwner = false;
@@ -85,6 +117,8 @@ class Stage {
       command: (action, value) => this.command(action, value),
       hud: (...args) => this.hud.show(...args),
       toggleFullscreen: () => this.toggleFullscreen(),
+      toggleScoring: () => this.toggleScoring(),
+      cycleOctave: () => this.cycleOctave(),
     });
     document.addEventListener("keydown", onKey);
 
@@ -93,6 +127,7 @@ class Stage {
     });
     this.setupCursorHiding();
     document.addEventListener("visibilitychange", () => this.updateWakeLock());
+    addEventListener("pagehide", () => this.mic.stop());
 
     setInterval(() => {
       if (this.isOwner && this.engine.playing) this.report("tick");
@@ -305,6 +340,10 @@ class Stage {
   onEngineEnded() {
     if (!this.track) return;
     this.track.ended = true;
+    if (this.mic.active && this.scoringOn() && this.pitch.status === "ok") {
+      // Exibido quando a cena seguinte ("A seguir" ou espera) aparecer — ver `syncFinalCard`.
+      this.finalCard = { itemId: this.track.itemId, points: this.scorer.score, until: null };
+    }
     this.report("ended");
   }
 
@@ -406,6 +445,178 @@ class Stage {
     });
     this.screens.show(scene);
     this.guestQr.update(s.guestState, status, scene);
+    this.syncScoring(scene);
+    this.syncFinalCard(scene);
+  }
+
+  /**
+   * Cartão final (US-19 AC-19.6, review-1 M1): aparece quando a música acabou e a cena vira "A seguir"
+   * (faixa compacta no topo, por min(4 s, contagem − 1 s)) ou espera sem próxima música (tela cheia, 4 s).
+   * Some ao começar outra faixa ("começar já" incluso), ao desligar a pontuação ou se o fim foi desfeito (seek).
+   */
+  syncFinalCard(scene) {
+    const f = this.finalCard;
+    if (!f) return;
+    const now = performance.now();
+    const undone = this.track && this.track.itemId === f.itemId && !this.track.ended;
+    const waitingEnd = scene === "play" && this.track && this.track.itemId === f.itemId;
+    if (!this.scoringOn() || undone || (f.until != null && now >= f.until)) return this.closeFinalCard();
+    if (waitingEnd) return; // servidor ainda não reagiu ao `ended`
+    if (scene !== "upnext" && scene !== "idle") return this.closeFinalCard();
+    if (f.until != null) return;
+    let dur = FINAL_CARD_MS;
+    const p = this.store.get().player;
+    if (scene === "upnext" && p && p.up_next && p.up_next.starts_at != null) {
+      dur = Math.min(
+        FINAL_CARD_MS,
+        p.up_next.starts_at - (Date.now() + this.store.get().serverSkewMs) - 1000,
+      );
+    }
+    if (dur < FINAL_CARD_MIN_MS) return this.closeFinalCard();
+    f.until = now + dur;
+    this.screens.announce(this.scorer.showFinal(f.points, scene === "upnext"));
+    f.timer = setTimeout(() => this.renderScene(), dur + 20);
+  }
+
+  closeFinalCard() {
+    if (this.finalCard) clearTimeout(this.finalCard.timer);
+    this.finalCard = null;
+    this.scorer.hideFinal();
+  }
+
+  // ---------------------------------------------------------------- pontuação e guia de notas (US-18/19/20)
+
+  /** `settings.scoring_enabled` (padrão ligado); o atalho S vale de imediato, antes da resposta do PATCH. */
+  scoringOn() {
+    const o = this.scoringOptimistic;
+    if (o) return o.v; // vale até a resposta do último S (sem prazo)
+    const st = this.store.get().settings;
+    return !(st && st.scoring_enabled === false);
+  }
+
+  /** Reconcilia régua, placar, aviso e microfone com setting + cena + notas. Idempotente. */
+  syncScoring(scene) {
+    const on = this.scoringOn();
+    const t = this.track;
+    if (on && !this.lastScoringOn) this.mic.error = null; // religou (S ou Controle): tenta o microfone de novo
+    this.lastScoringOn = on;
+    if (on && t && this.pitch.itemId !== t.itemId) this.loadPitch(t);
+    if (!t && this.pitch.itemId) this.pitch = { itemId: null, songId: null, status: "none", notes: [] };
+
+    const hasNotes = on && !!t && this.pitch.itemId === t.itemId && this.pitch.status === "ok";
+    const scoring = hasNotes && this.isOwner && this.unlocked;
+    const rollOn = hasNotes && scene === "play";
+    this.pitchRoll.setVisible(rollOn);
+    this.root.classList.toggle("scoring-on", rollOn); // régua maior e letra menor (FIX-001)
+    this.scorer.setVisible(scoring && scene === "play" && !this.mic.error);
+
+    // Abre numa faixa com notas; depois segue aberto entre faixas (A seguir/carregando, review-1 L).
+    // Fecha ao desligar, perder a posse, ficar em espera ou sair da página.
+    const status = this.store.get().player?.status;
+    const keep = on && this.isOwner && this.unlocked && MIC_KEEP_STATUSES.has(status);
+    if (scoring && SONG_STATUSES.has(status)) {
+      if (!this.mic.active && !this.mic.pending && !this.mic.error) {
+        this.mic.start().then(() => this.renderScene());
+      }
+    } else if (!keep && (this.mic.active || this.mic.pending)) {
+      this.mic.stop();
+      this.smoother.reset();
+    }
+
+    let note = "";
+    if (on && scene === "play" && t && this.pitch.itemId === t.itemId && this.pitch.status === "none") {
+      note = "Notas indisponíveis para esta faixa";
+    } else if (scoring && scene === "play" && this.mic.error) {
+      note = this.mic.error === "denied"
+        ? "Permita o microfone no navegador para pontuar"
+        : "Microfone indisponível neste navegador — a pontuação fica desligada";
+    }
+    this.pitchNote.textContent = note;
+    this.pitchNote.hidden = !note;
+  }
+
+  /** Notas por `mediaKey` (nova preparação da música = nova versão = busca de novo). */
+  getPitch(songId, key) {
+    if (!this.pitchCache.has(key)) {
+      const p = api.get(`/api/songs/${encodeURIComponent(songId)}/pitch`);
+      p.catch(() => this.pitchCache.delete(key));
+      this.pitchCache.set(key, p);
+      if (this.pitchCache.size > 4) this.pitchCache.delete(this.pitchCache.keys().next().value);
+    }
+    return this.pitchCache.get(key);
+  }
+
+  loadPitch(track) {
+    const { itemId, songId, key } = track;
+    this.pitch = { itemId, songId, status: "loading", notes: [] };
+    this.pitchRoll.setNotes([]);
+    this.scorer.reset([]);
+    this.getPitch(songId, key)
+      .then((doc) => {
+        const notes = ((doc && doc.notes) || [])
+          .filter((n) => Number.isFinite(n.start) && Number.isFinite(n.end) && n.end > n.start && n.midi > 0)
+          .sort((a, b) => a.start - b.start);
+        return notes;
+      })
+      .catch(() => [])
+      .then((notes) => {
+        if (this.pitch.itemId !== itemId) return;
+        this.pitch = { itemId, songId, status: notes.length ? "ok" : "none", notes };
+        this.pitchRoll.setNotes(notes);
+        this.scorer.reset(notes);
+        this.renderScene();
+      });
+  }
+
+  /** Atalho S: alterna na hora (HUD + Palco) e grava `PATCH /api/settings` — o SSE avisa os outros Palcos. */
+  toggleScoring() {
+    const next = !this.scoringOn();
+    const gen = ++this.scoringGen;
+    this.scoringOptimistic = { v: next, t: performance.now() };
+    this.hud.show("target", next ? "Pontuação: Ativada" : "Pontuação: Desativada");
+    this.renderScene();
+    api.patch("/api/settings", { scoring_enabled: next })
+      .then((st) => {
+        if (st && gen === this.scoringGen) this.store.set({ settings: st });
+      })
+      .catch((e) => {
+        if (gen === this.scoringGen) this.hud.show("alert", "Não deu para salvar a pontuação", e.message);
+      })
+      .finally(() => {
+        if (gen !== this.scoringGen) return; // outro S em voo: ele decide
+        this.scoringOptimistic = null;
+        this.renderScene();
+      });
+  }
+
+  /** Tecla O: régua 0 → −1 → +1 → 0 oitava; vale para as próximas músicas (localStorage, por Palco). */
+  cycleOctave() {
+    this.octaveShift = nextOctaveShift(this.octaveShift);
+    this.pitchRoll.setOctaveShift(this.octaveShift);
+    try {
+      localStorage.setItem(OCTAVE_KEY, String(this.octaveShift));
+    } catch { /* modo privado etc.: vale só nesta sessão */ }
+    this.hud.show("music", octaveShiftLabel(this.octaveShift));
+  }
+
+  /**
+   * Por quadro, na cena "play": leitura do microfone (a cada quadro), suavização por tempo, acerto contra
+   * a nota na oitava da régua, placar e régua. O indicador mostra a altura real (sem dobra de oitava).
+   */
+  framePitch(posMs, latencyMs) {
+    const now = performance.now();
+    const dt = Math.min(0.1, (now - this.lastFrameAt) / 1000);
+    this.lastFrameAt = now;
+    if (this.pitchRoll.box.hidden) return;
+    const timeS = (posMs - latencyMs) / 1000;
+    const target = noteAt(this.pitch.notes, timeS);
+    const targetMidi = target ? target.midi + 12 * this.octaveShift : null;
+    const voice = this.mic.active ? this.smoother.update(this.mic.read(), now) : null;
+    if (!voice) this.smoother.reset();
+    const sung = voice && voice.voiced ? voice.midi : null; // só voz confiável pontua (AC-26.2)
+    let hit = checkPitchHit(targetMidi, sung);
+    if (this.mic.active && this.engine.playing) hit = this.scorer.tick(targetMidi, sung, dt, timeS);
+    this.pitchRoll.render(timeS, voice ? voice.midi : null, target, hit, voice ? voice.alpha : 0);
   }
 
   renderPrep(s, item) {
@@ -452,6 +663,7 @@ class Stage {
       }
       this.screens.updateProgress(posMs, durMs || p.duration_ms || 0);
       if (this.lyrics.status === "ok") this.renderer.render(posMs - latencyMs - (p.offset_ms || 0));
+      this.framePitch(posMs, latencyMs);
     } else if (scene === "upnext" && p && p.up_next && p.up_next.starts_at != null) {
       this.screens.updateRing(p.up_next.starts_at - (Date.now() + s.serverSkewMs), this.upnextTotal);
     } else if (scene === "error" && this.errorState && !this.errorState.waiting) {

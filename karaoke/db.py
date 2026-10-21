@@ -230,7 +230,7 @@ def _split_sql(script: str) -> list[str]:
     stmts, buf = [], []
     for line in script.splitlines():
         buf.append(line)
-        if sqlite3.complete_statement("\n".join(buf)):
+        if sqlite3.complete_statement("\n".join(buf) + "\n"):
             stmt = "\n".join(buf).strip()
             if stmt.strip(";").strip():
                 stmts.append(stmt)

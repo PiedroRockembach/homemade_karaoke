@@ -35,4 +35,7 @@ VPY=.venv/bin/python
 "$VPY" -m pip install -c constraints.txt -e ".[dev]"
 
 mkdir -p data
+
+# Opcional: liberar as portas do modo convidado no ufw/firewalld (pergunta; sem TTY pula; nunca falha).
+bash scripts/firewall-linux.sh || echo "AVISO: o passo do firewall falhou; rode depois: make firewall" >&2
 echo ">> instalação concluída. Rode: make doctor  |  make start"

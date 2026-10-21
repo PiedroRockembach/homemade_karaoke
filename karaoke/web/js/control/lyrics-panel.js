@@ -1,7 +1,7 @@
 /**
  * Modal "Letra — <música>" (US-03, v0.2/CR-001): candidatas com o chip de origem do backend (`label`), aviso
  * "sem letra oficial" com "Colar letra oficial", candidatas só texto (`selectable: false`) como fontes de texto;
- * rebuscar no LRCLIB; colar letra (LRC ou texto puro); "Buscar letra oficial e sincronizar"; faixa "Letra fora do
+ * rebuscar no LRCLIB + fontes extras (ADR-0005: Vagalume, lyrics.ovh, toast de fonte que não respondeu); colar letra (LRC ou texto puro); "Buscar letra oficial e sincronizar"; faixa "Letra fora do
  * tempo? [Editar sincronia] · ajuste rápido −/+" (o editor substitui o antigo bloco de offset).
  *
  * Dono: frontend-engineer (T-008; v0.2: T-003).
@@ -18,6 +18,7 @@ import {
   pasteHint,
   submitPastedLyrics,
 } from "./lyrics-actions.js";
+import { extraSourcesOn, PROVIDER_NAMES } from "./settings.js";
 import { openSyncEditor } from "./sync-editor.js";
 import { modalButton, openModal, toast, toastError, withBusy } from "./ui.js";
 
@@ -25,6 +26,28 @@ const DURATION_WARN_MS = 3000;
 const OFFSET_MIN = -10000;
 const OFFSET_MAX = 10000;
 const TABS = ["cand", "paste", "voice"];
+
+/** Fontes consultadas na busca, conforme `extra_lyrics_sources` (ADR-0005). */
+function searchSources() {
+  return extraSourcesOn() ? ["lrclib", "vagalume", "lyricsovh"] : ["lrclib"];
+}
+
+/** "LRCLIB, Vagalume e lyrics.ovh" (`conj` = "e" | "ou"). */
+function joinNames(keys, conj) {
+  const names = keys.map((k) => PROVIDER_NAMES[k] || k);
+  return names.length > 1 ? `${names.slice(0, -1).join(", ")} ${conj} ${names[names.length - 1]}` : names[0];
+}
+
+/** Toast discreto para fontes que falharam por rede numa busca que deu 200 (`sources`). */
+function toastUnreachable(sources) {
+  const down = Object.keys(PROVIDER_NAMES).filter((k) =>
+    sources && (sources[k] === "offline" || sources[k] === "timeout")
+  );
+  if (!down.length) return;
+  toast(`${joinNames(down, "e")} ${down.length === 1 ? "não respondeu" : "não responderam"}`, {
+    level: "info",
+  });
+}
 
 /** Estado do modal aberto (um por vez). */
 let cur = null;
@@ -131,15 +154,24 @@ export async function openLyrics(songId) {
               ? `${res.added} ${
                 res.added === 1 ? "nova candidata encontrada" : "novas candidatas encontradas"
               }`
+              : extraSourcesOn()
+              ? `Nenhuma letra nova em ${joinNames(searchSources(), "ou")}`
               : "Nenhuma candidata nova no LRCLIB",
             { level: res.added ? "success" : "info" },
           );
+          toastUnreachable(res.sources);
         } catch (err) {
           toastError(err);
         }
       },
     },
-    h("p", { class: "research-title" }, "Não achou a certa? Busque de novo no LRCLIB com outros termos:"),
+    h(
+      "p",
+      { class: "research-title" },
+      extraSourcesOn()
+        ? `Não achou a certa? Busque de novo (${joinNames(searchSources(), "e")}) com outros termos:`
+        : "Não achou a certa? Busque de novo no LRCLIB com outros termos:",
+    ),
     h(
       "div",
       { class: "research-fields" },
@@ -384,7 +416,9 @@ export async function openLyrics(songId) {
         emptyState({
           iconId: "lyrics",
           compact: true,
-          title: "Nenhuma letra encontrada",
+          title: `Nenhuma letra encontrada ${extraSourcesOn() ? "em" : "no"} ${
+            joinNames(searchSources(), "ou")
+          }`,
           text:
             "Busque de novo com outros termos abaixo, cole a letra ou use “Buscar letra oficial e sincronizar”.",
         }),

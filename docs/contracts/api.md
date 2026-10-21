@@ -201,9 +201,21 @@ evento `system.updated`. `200` se já baixado. `404 model_not_found`.
   "theme": "system",              // Controle: "system" | "light" | "dark"
   "lyrics_mode": "aligned"        // "aligned" (letra oficial sincronizada pela voz) | "online" (LRCLIB com tempos como está).
                                   // CR-001: PATCH aceita "transcribe" (alias legado) e grava/devolve "aligned". A UI mostra só os 2.
+  "extra_lyrics_sources": true,   // ADR-0005: buscar letra também no Vagalume e no lyrics.ovh (padrão true)
+  "vagalume_api_key_set": false   // ADR-0005: só leitura — há chave da API do Vagalume gravada? (a chave nunca é devolvida)
 }
 ```
 PATCH aceita qualquer subconjunto → 200 com o objeto completo. Evento `settings.updated`.
+
+**ADR-0005 — fontes extras e chave do Vagalume** (campos aceitos só no PATCH):
+```json
+{ "extra_lyrics_sources": false }                 // liga/desliga Vagalume + lyrics.ovh
+{ "vagalume_api_key": "abc123…" }                 // grava (strip; 1–200 chars) → resposta com "vagalume_api_key_set": true
+{ "vagalume_api_key": null }                      // remove ("" também remove) → "vagalume_api_key_set": false
+```
+`vagalume_api_key` nunca aparece em respostas, em `settings.updated`, no `hello` do SSE nem em logs.
+Enviar `vagalume_api_key_set` ou chave > 200 chars → `400 invalid_request`. Com chave, o Vagalume usa a API
+oficial; se ela falhar (chave inválida etc.), usa a página pública — sem erro para a UI.
 
 ## 4. Busca no YouTube
 
@@ -339,6 +351,15 @@ Padrão `status=ready`, `sort=recent`. `q` filtra título/artista (case/acento-i
 ```
 
 ### GET `/api/songs/{song_id}` → `200 Song` | `404` `[guest-safe]`
+### GET `/api/songs/{song_id}/pitch` → `200` | `404 song_not_found` `[guest-safe]` (US-21)
+Notas de referência da voz (YIN). O cache fica em `data/songs/{id}/pitch.json` no formato `{"version": 2, "notes": [...]}` e é
+calculado sob demanda na 1ª requisição. Caches sem `version` 2 (v1, lista pura) são recalculados.
+```json
+{ "song_id": "abc", "notes": [ { "start": 1.0, "end": 1.4, "midi": 60, "note_name": "C4", "note": "C4", "text": "La" } ] }
+```
+`start`/`end` em segundos; `note_name` é o campo oficial (`note` = alias legado); `text` opcional.
+Sem `vocals.opus` ou falha na extração → `notes: []` (nunca 500; a falha fica cacheada com `"failed": true`). Diretório da música inexistente → `404`.
+
 ### PATCH `/api/songs/{song_id}` `[host]`
 ```json
 { "title": "Bohemian Rhapsody", "artist": "Queen", "offset_ms": -150 }     // qualquer subconjunto
@@ -394,6 +415,28 @@ candidata só texto, `timing: "none"`). Rótulos: `aligned` "Online · sincroniz
 `online_plain` "Online · só texto" (mesmos campos de `lrclib`), `whisper` "Extraída da voz (sem letra oficial)",
 `manual` "Manual" ou "Colada · só texto" (colada sem tempos).
 
+**ADR-0005 — provedor da letra.** `lrclib`, `online_plain` e `aligned` ganham `provider`:
+`"lrclib" | "vagalume" | "lyricsovh"` (`null` em `whisper`/`manual`). Fontes extras chegam **sempre** como
+`source: "online_plain"` (`timing: "none"`, `selectable: false`, `official_text: true`, `album_name: null`;
+`duration_ms`/`duration_diff_ms` `null` no Vagalume, preenchidos no lyrics.ovh) e o `label` indica a origem:
+
+| `provider` de uma `online_plain` | `label` |
+|----------------------------------|---------|
+| `lrclib` | "Online · só texto" |
+| `vagalume` | "Vagalume · só texto" |
+| `lyricsovh` | "lyrics.ovh · só texto" |
+
+```json
+{ "id": "online_plain:7", "source": "online_plain", "provider": "vagalume", "label": "Vagalume · só texto",
+  "timing": "none", "official_text": true, "selectable": false, "derived_from": null,
+  "track_name": "Canção Exemplo", "artist_name": "Banda Fictícia", "album_name": null,
+  "duration_ms": null, "duration_diff_ms": null, "line_count": 38,
+  "preview": ["Linha de exemplo um", "Linha de exemplo dois", "Linha de exemplo três"],
+  "created_at": "2026-10-20T23:40:00Z" }
+```
+Usar uma delas = o mesmo de qualquer `online_plain`: `POST /lyrics/align { "candidate_id": "online_plain:7" }`
+("Sincronizar pela voz"). A `aligned` derivada mantém o rótulo "Online · sincronizada pela voz" e herda `provider`.
+
 ### PUT `/api/songs/{song_id}/lyrics/selected`
 ```json
 { "candidate_id": "whisper:2" }
@@ -411,12 +454,32 @@ Aceita LRC simples e Enhanced LRC (`<mm:ss.xx>` por palavra); tags `[ar:]`, `[ti
 a candidata só texto é gravada (não selecionada) e, se a música está pronta, um job `align` com ela é enfileirado
 (`job: null` se não estiver pronta — use `/align` depois). Ao terminar, a `aligned` derivada é selecionada.
 
-### POST `/api/songs/{song_id}/lyrics/search` — rebuscar no LRCLIB com termos editados
+### POST `/api/songs/{song_id}/lyrics/search` — rebuscar letra com termos editados (LRCLIB + fontes extras)
 ```json
 { "track_name": "Bohemian Rhapsody", "artist_name": "Queen" }      // opcionais; padrão = título/artista atuais
 ```
-→ `200 { "added": 2, "candidates": [ …mesmo formato de /candidates… ] }` (não troca a seleção).
-`502 network_unavailable`.
+→ `200 { "added": 2, "candidates": [ …mesmo formato de /candidates… ], "sources": { … } }` (não troca a seleção).
+
+ADR-0005: consulta **sempre** o LRCLIB e, se `extra_lyrics_sources` estiver ligado, também Vagalume e lyrics.ovh
+(cada um independente). Novas candidatas: LRCLIB primeiro, depois Vagalume, depois lyrics.ovh, sem duplicar as
+já existentes (mesmo `provider_id` ou mesmo começo de texto). `added` conta todas as novas.
+
+`sources` (novo) — resultado por fonte consultada; fontes desligadas não aparecem:
+```json
+"sources": { "lrclib": "empty", "vagalume": "ok", "lyricsovh": "timeout" }
+```
+Valores: `ok` (achou ≥ 1, mesmo se todas já existiam) · `empty` (nada que corresponda à música) · `error` (HTTP/
+formato inesperado — tratado como vazio) · `offline` (sem conexão) · `timeout`. Uso na UI (opcional): toast
+informativo "Vagalume não respondeu" quando houver `offline`/`timeout` numa fonte e `200`.
+
+Erros: `502 network_unavailable` **só** se todas as fontes consultadas falharam por rede (`offline`/`timeout`):
+- fontes extras ligadas → `message: "Não foi possível falar com LRCLIB, Vagalume e lyrics.ovh. A busca de letras exige internet."`, `details: { "reason": "all_sources_unavailable" }`;
+- fontes extras desligadas → mensagens atuais (sem conexão / `details.reason: "lrclib_unavailable"`).
+
+Mensagens da UI (pt-BR): `added == 0` com extras ligadas → toast "Nenhuma letra nova em LRCLIB, Vagalume ou
+lyrics.ovh"; extras desligadas → "Nenhuma candidata nova no LRCLIB" (atual). Lista de candidatas vazia após a busca
+→ estado vazio "Nenhuma letra encontrada em LRCLIB, Vagalume ou lyrics.ovh." (sem os dois nomes se desligadas).
+Texto do formulário: "Não achou a certa? Busque de novo (LRCLIB, Vagalume e lyrics.ovh) com outros termos:".
 
 ### POST `/api/songs/{song_id}/lyrics/transcribe` — regerar com Whisper
 ```json
@@ -695,11 +758,41 @@ desligado (AC-11.5). Rotas antigas reservadas na v0.2 (`/api/guest/status`, `/ap
   "address": "192.168.1.16",                    // IP em uso (null se desligado)
   "port": 8765,
   "addresses": [                                // candidatos (sempre preenchido, mesmo desligado)
-    { "address": "192.168.1.16", "interface": "enp6s0", "kind": "ethernet", "recommended": true },
-    { "address": "192.168.1.4",  "interface": "wlan0",  "kind": "wifi",     "recommended": false }
+    { "address": "192.168.1.16", "interface": "enp6s0", "kind": "ethernet", "recommended": true,  "bind_address": null },
+    { "address": "192.168.1.4",  "interface": "wlan0",  "kind": "wifi",     "recommended": false, "bind_address": null }
   ],                                            // kind: ethernet | wifi | vpn | other (virtual/docker nunca aparece)
-  "firewall_hint": { "tool": "ufw", "command": "sudo ufw allow 8765/tcp" },   // ou tool "firewall-cmd"; null se nenhum
+  "firewall_hint": { "tool": "ufw", "command": "sudo ufw allow 8765/tcp" },   // tool: ufw | firewall-cmd | windows; null se nenhum
+  "platform": "linux",                          // v0.4 (ADR-0006): linux | wsl-mirrored | wsl-nat | wsl-unknown
+  "diagnostics": [],                            // v0.4 (ADR-0006 §6): dicas detectáveis; [] se nada a apontar
   "error": null                                 // { "code": "lan_bind_failed", "message": "…" } do último enable, se falhou
+}
+```
+
+v0.4 ([ADR-0006](../adr/0006-windows-wsl-lan-and-firewall.md)) — campos aditivos, retrocompatíveis:
+- `addresses[].bind_address`: IP local onde o listener abre, quando **difere** do `address` anunciado (só em
+  `platform: "wsl-nat"`: `address` = IP do Windows na LAN, `bind_address` = IP do `eth0` do WSL). `null` nos demais.
+  O `POST /api/guest/enable {address}` continua recebendo o `address` (o anunciado). `GuestState.address`, `url`,
+  `display_url` e o QR sempre usam o anunciado.
+- `firewall_hint` no WSL: `{ "tool": "windows", "command": "karaoke.bat --configurar-rede" }`.
+- `diagnostics[]`: `{ "code", "severity": "warning" | "info", "message", "command": string | null }`. Códigos:
+  `wsl_nat_unconfigured`, `wsl_portproxy_stale`, `windows_firewall_rule_missing`, `windows_hyperv_rule_missing`,
+  `windows_network_public` (warning) · `windows_ip_unknown`, `vpn_present` (info). Calculado a partir de cache
+  (sonda do Windows ≤ 1×/60 s); a UI mostra a lista sob o QR/seletor, com o `command` copiável.
+
+Exemplo no Windows 10 (WSL NAT, portproxy não configurado):
+```json
+{
+  "enabled": false, "address": null, "port": 8765, "platform": "wsl-nat",
+  "addresses": [ { "address": "192.168.1.16", "interface": "Wi-Fi (Windows)", "kind": "wifi", "recommended": true,
+                   "bind_address": "172.24.5.3" } ],
+  "firewall_hint": { "tool": "windows", "command": "karaoke.bat --configurar-rede" },
+  "diagnostics": [
+    { "code": "wsl_nat_unconfigured", "severity": "warning",
+      "message": "O Windows ainda não encaminha a porta para o WSL.", "command": "karaoke.bat --configurar-rede" },
+    { "code": "windows_network_public", "severity": "warning",
+      "message": "A rede \"Casa\" está como Pública no Windows; marque-a como Privada.", "command": "karaoke.bat --configurar-rede" }
+  ],
+  "error": null
 }
 ```
 

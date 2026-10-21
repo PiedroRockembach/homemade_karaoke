@@ -2,6 +2,96 @@
 
 Formato baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Versionamento [SemVer](https://semver.org/lang/pt-BR/).
 
+## [Não lançado]
+
+### Alterado
+- **Indicador de voz fiel**: o ponto da régua mostra a altura real cantada (sem dobrar de oitava), com leitura
+  suavizada: não treme em nota longa, acompanha vibrato e glissando e descarta saltos falsos de oitava.
+- **Captação do microfone**: supressão de ruído e ganho automático desligados (cancelamento de eco continua ligado).
+- **Tolerância estrita**: a nota só pontua a até ±50 cents (meio semitom) do alvo; uma oitava acima ou abaixo não vale.
+- **Modo convidado no Windows (WSL)**: o QR mostra o IP do Windows na Wi-Fi/cabo, e não mais o IP interno `172.x`
+  do WSL ([ADR-0006](docs/adr/0006-windows-wsl-lan-and-firewall.md)).
+
+### Adicionado
+- **Tecla `O`** no Palco: desloca a régua 0 → −1 → +1 oitava para quem canta em outro registro. A pontuação usa o
+  mesmo alvo deslocado, e a escolha fica salva no Palco.
+- **`karaoke.bat --configurar-rede` / `--desfazer-rede`** (Windows): libera a rede para os celulares dos convidados
+  com `scripts/windows/setup-network.ps1`, que pede UAC e confirma cada passo. No Windows 11 usa o WSL *mirrored*, com
+  backup do `.wslconfig`; no Windows 10, o `portproxy` com a tarefa `\Karaoke\AtualizarRede`. Inclui as regras de
+  firewall do Windows e do Hyper-V (TCP 8765–8774, perfil Privado) e a opção de marcar a rede como Privada. O
+  `karaoke.bat` oferece essa configuração uma vez, na primeira abertura.
+- **`make firewall` / `make firewall-undo`** (Linux): liberam ou fecham 8765–8774/tcp no ufw ou firewalld. O
+  `make install` oferece o mesmo passo no fim (S/n). Sem terminal interativo o passo é pulado, e a instalação nunca
+  falha por causa dele.
+- **Diagnósticos de rede no card do Modo convidado**: avisos detectáveis (encaminhamento faltando ou desatualizado,
+  regra de firewall faltando, rede Pública, VPN), cada um com o comando para copiar.
+
+## [0.4.0] — 2026-10-21
+
+Pontuação e guia de notas no Palco, QR code também durante a música e novas fontes de letra (Vagalume e lyrics.ovh).
+
+### Adicionado
+- **Pontuação e guia de notas** no Palco: uma régua com as notas da voz original corre da direita para a esquerda
+  acima da letra, até a linha "agora". O microfone do navegador mostra onde está a sua voz (ponto luminoso), a barra
+  acende quando você acerta a nota e o placar no topo vai de 0 a 10.000. A pontuação depende do tempo afinado, não
+  da velocidade da tela.
+- Tolerância: ±1 semitom, e cantar uma ou mais oitavas acima ou abaixo também vale (vozes graves e agudas pontuam
+  igual).
+- **Pontuação final** no fim da música: uma faixa compacta no topo do "A seguir" (sem cobrir o próximo cantor) ou o
+  cartão em tela cheia por 4 s quando a fila acabou. Com contagem do "A seguir" menor que 1,5 s, o cartão não aparece.
+- **Tecla `S`** no Palco liga/desliga a pontuação (o HUD mostra "Pontuação: Ativada/Desativada").
+- Interruptor **Pontuação e guia de notas** em Controle › Configurações › **Palco** (ligado por padrão). Vale para
+  todos os Palcos abertos na hora.
+- O microfone só é aberto com a pontuação ligada, no Palco que toca o som, e a análise é feita toda no navegador:
+  o áudio do microfone nunca sai dele nem é tocado na caixa.
+- As notas de cada música são extraídas da voz separada no fim do preparo (menos de 1 s por música) e guardadas em
+  `data/songs/<id>/pitch.json`. Músicas preparadas em versões anteriores ganham as notas sozinhas na primeira vez
+  que tocam.
+- Avisos no Palco: "Notas indisponíveis para esta faixa" e "Permita o microfone no navegador para pontuar" (a música
+  continua tocando nos dois casos).
+- **QR code contínuo**: com o modo convidado ligado, o QR fica pequeno no canto inferior direito durante a música e
+  em destaque entre as músicas.
+- **Vagalume e lyrics.ovh** como fontes de letra, depois do LRCLIB e antes da voz (Whisper). Eles só são consultados
+  quando o LRCLIB não tem uma letra que sirva. O texto só é aceito se título e artista conferem com a música, e os
+  tempos vêm da voz, como numa letra colada.
+- Rótulos de origem nas candidatas: "Vagalume · só texto" e "lyrics.ovh · só texto".
+- **Buscar de novo** (em *Candidatas e colar LRC…*) consulta todas as fontes, LRCLIB primeiro, sem duplicar
+  candidatas. Avisa quando uma fonte não respondeu ("Vagalume não respondeu") e só mostra erro de rede se nenhuma
+  responder.
+- Seção **Fontes de letra** nas Configurações: interruptor "Buscar letra em outras fontes (Vagalume, lyrics.ovh)"
+  (ligado por padrão) e campo opcional "Chave da API do Vagalume", com *Salvar* e *Remover*. A chave fica só no
+  computador e nunca é exibida nem devolvida pela API.
+
+### Alterado
+- O QR code do modo convidado não some mais durante a música (antes aparecia só entre as músicas).
+- `GET /api/settings` ganhou `scoring_enabled`, `extra_lyrics_sources` e `vagalume_api_key_set`. `PATCH
+  /api/settings` aceita `scoring_enabled`, `extra_lyrics_sources` e `vagalume_api_key` (`""` ou `null` remove a
+  chave).
+- Nova rota `GET /api/songs/{id}/pitch` (notas da voz; `404` se a música não existe, `notes: []` se não há notas).
+- Quando o LRCLIB não acha a letra, o preparo pode levar alguns segundos a mais. Cada consulta desiste em ~5 s (no
+  pior caso, cerca de 10 s por fonte) e na hora quando não há internet. Uma fonte com erro nunca faz o preparo falhar: a app passa para a próxima.
+- Os textos de busca e de "nenhuma letra encontrada" citam todas as fontes ligadas.
+- A busca manual de letra (`POST /api/songs/{id}/lyrics/search`) devolve `sources` com o estado de cada fonte e
+  `502 all_sources_unavailable` quando todas falham por rede.
+- A app passa a se conectar também a `vagalume.com.br` e `lyrics.ovh` (só título e artista). Desligue o interruptor
+  para voltar a usar só o LRCLIB.
+- `numpy` agora aparece explicitamente nas dependências (já era instalado junto com o demucs e o faster-whisper).
+  Nada novo é baixado: quem já tem a v0.3 não precisa rodar `make install` de novo.
+
+### Problemas conhecidos
+- **A voz-guia que sai da caixa pode pontuar sozinha**: o microfone capta a voz original tocando. Deixe o microfone
+  longe da caixa de som, ou abaixe/desligue a voz guia (`V`) para uma pontuação mais justa.
+- Nas Configurações, depois de um *Tentar de novo* que dá certo, o foco do teclado cai no fundo do modal. Use `Tab`
+  para voltar aos controles.
+- **Letras.mus.br não é suportado**: o site bloqueia acesso automático. Use colar letra (menu *Letra* › *Colar
+  letra…*) para músicas que só existem lá.
+- Sem chave da API, o Vagalume depende da página pública do site e pode parar de trazer letras se o site mudar.
+- A análise do microfone roda na thread da página do Palco. Em máquinas muito fracas, a régua pode engasgar; desligue
+  a pontuação com `S` se isso acontecer.
+- No Palco em modo espelho (sem som), a régua acompanha a posição do servidor e pode ficar ~0,1 s fora do tempo.
+- Continuam valendo os problemas conhecidos da v0.3 (M-N1, muitos convidados abrindo `/guest` ao mesmo tempo e
+  outros).
+
 ## [0.3.0] — 2026-10-05
 
 Modo convidado: os convidados escaneiam um QR code na TV e pedem músicas pelo celular, na mesma rede Wi-Fi.

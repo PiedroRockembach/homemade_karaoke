@@ -1,4 +1,4 @@
-"""Descoberta dos IPv4 de LAN (ADR-0003 §2). Só biblioteca padrão; Linux (SO-alvo).
+"""Descoberta dos IPv4 de LAN (ADR-0003 §2). Só biblioteca padrão; Linux (SO-alvo). No WSL, o `winnet` ajusta.
 
 `discover()` devolve os candidatos para o QR (`GuestState.addresses`). A classificação (`classify`) é pura e testada
 com dados simulados; a leitura do sistema (`read_interfaces`) usa `ioctl` e `/sys`.
@@ -46,6 +46,7 @@ class LanAddress:
     interface: str
     kind: str  # ethernet | wifi | vpn | other
     recommended: bool = False
+    bind_address: str | None = None  # ADR-0006: IP local do listener quando difere do anunciado (só wsl-nat)
 
     def to_dict(self) -> dict[str, object]:
         return asdict(self)

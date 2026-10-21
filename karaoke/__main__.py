@@ -56,6 +56,7 @@ def setup_logging(config: Config) -> None:
     fh.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s"))
     logging.getLogger("karaoke").addHandler(fh)
     logging.getLogger("karaoke").setLevel(logging.INFO)
+    logging.getLogger("httpx").setLevel(logging.WARNING)  # URLs em INFO; a da API do Vagalume leva a chave
 
 
 def prepare_environment(config: Config) -> None:

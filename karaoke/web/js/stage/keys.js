@@ -22,6 +22,8 @@ const pct = (v) => Math.round(clamp01(v) * 100);
  * @property {(action: string, value?: any) => void} command
  * @property {(icon: string, label: string, value?: string, pct?: number|null) => void} hud
  * @property {() => void} toggleFullscreen
+ * @property {() => void} [toggleScoring]     S: pontuação e guia de notas (US-20)
+ * @property {() => void} [cycleOctave]       O: régua 0 → −1 → +1 oitava (US-27)
  */
 
 /** @param {KeyContext} ctx */
@@ -136,6 +138,12 @@ export function createKeyHandler(ctx) {
         ctx.hud("refresh", on ? "Auto-avanço ligado" : "Auto-avanço desligado");
         return;
       }
+      case lower === "s":
+        ctx.toggleScoring?.();
+        return;
+      case lower === "o":
+        ctx.cycleOctave?.();
+        return;
     }
   };
 }

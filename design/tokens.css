@@ -268,4 +268,10 @@
   --qr-dark: #07050f;                        /* módulos do QR */
   --stage-qr: clamp(220px, 40vh, 60vh);      /* QR na Espera / Pressione Enter (≥ 25% da altura) */
   --stage-qr-sm: clamp(200px, 30vh, 44vh);   /* QR no A seguir / Aguardando preparo */
+  /* ---------- v0.4 — Pontuação e Guia de Notas (ciclo 20261017-1115) ---------- */
+  --stage-qr-mini: clamp(90px, 14vh, 130px); /* QR contínuo no Palco durante a música */
+  --stage-note-bar: #38bdf8;                  /* barra de nota musical esperada */
+  --stage-note-hit: #facc15;                  /* acerto na nota cantada (glow) */
+  --stage-note-perfect: #4ade80;              /* afinação exata (verde neon) */
+  --stage-pitch-trail: #ec4899;               /* rastro da nota do cantor */
 }

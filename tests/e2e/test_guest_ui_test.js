@@ -37,17 +37,11 @@ Deno.test("QR menor no A seguir e no Aguardando preparo", () => {
   eq(qrPlacement(ON, "idle", "prep"), "sm");
 });
 
-Deno.test("QR nunca durante a música (AC-12.2)", () => {
-  for (const status of ["playing", "paused", "loading"]) {
-    for (const scene of ["play", "loading", "start", "idle", "upnext", "error"]) {
-      eq(qrPlacement(ON, status, scene), null, `${status}/${scene}`);
-    }
-  }
-  // Palco sem gesto (cena start) enquanto outro Palco toca: sem QR.
-  eq(qrPlacement(ON, "playing", "start"), null);
-  // waiting_gesture no Palco dono vira cena "loading": sem QR.
-  eq(qrPlacement(ON, "waiting_gesture", "loading"), null);
-  eq(qrPlacement(ON, "idle", "error"), null);
+Deno.test("QR contínuo no Palco durante a música como mini (US-17)", () => {
+  eq(qrPlacement(ON, "playing", "play"), "mini");
+  eq(qrPlacement(ON, "paused", "play"), "mini");
+  eq(qrPlacement(ON, "playing", "start"), "mini");
+  eq(qrPlacement(ON, "idle", "error"), null, "erro não mostra QR");
 });
 
 Deno.test("QR some com o modo desligado ou sem estado (AC-12.3)", () => {

@@ -9,6 +9,7 @@
  *   autostart=1        simula o Enter ao abrir (precisa de autoplay liberado no navegador)
  *   mockq=empty        fila vazia (tela de espera)
  *   mocklyrics=none    1ª música sem letra ("Letra indisponível")
+ *   mockpitch=none     sem notas (`GET /api/songs/{id}/pitch` → notes: []) — "Notas indisponíveis…"
  *   mockerr=1          1ª música com áudio quebrado (tela de erro)
  *   mockprep=1         fila com 1 música ainda processando ("Aguardando preparo"; fica pronta em ~15 s)
  *   mockowner=other    outro Palco é o dono do áudio (modo espelho)
@@ -263,6 +264,7 @@ export function installMock(params) {
   let firstStart = true;
 
   const listeners = new Set();
+  const mockSettings = { scoring_enabled: params.get("mockscore") !== "0" };
   const emit = (type, data) => {
     for (const es of listeners) es._dispatch(type, data);
   };
@@ -547,6 +549,19 @@ export function installMock(params) {
       if (!def) return fail(404, "song_not_found", "Música não encontrada.", { song_id: m[1] });
       return ok(lyricsDoc(def, opts));
     }
+    if (method === "GET" && (m = p.match(/^\/api\/songs\/([A-Za-z0-9_-]{11})\/pitch$/))) {
+      const def = SONGS.find((s) => s.id === m[1]);
+      if (!def) return fail(404, "song_not_found", "Música não encontrada.", { song_id: m[1] });
+      return ok({
+        song_id: def.id,
+        notes: params.get("mockpitch") === "none" ? [] : mockNotes(def.duration),
+      });
+    }
+    if (method === "PATCH" && p === "/api/settings") {
+      Object.assign(mockSettings, body || {});
+      emit("settings.updated", { ...mockSettings });
+      return ok({ ...mockSettings });
+    }
     if (method === "POST" && p === "/api/stage/claim") {
       st.stage.audio_owner = body.client_id;
       st.stage.unlocked = true;
@@ -581,6 +596,7 @@ export function installMock(params) {
           queue: JSON.parse(JSON.stringify(queue)),
           jobs: [],
           settings: {
+            ...mockSettings,
             countdown_s: opts.countdown,
             autoplay: st.autoplay,
             guide_vocal_default: 0,
@@ -665,4 +681,16 @@ async function synthesize(url, ctx, songs) {
   buf.copyToChannel(data, 0);
   buf.copyToChannel(data, 1);
   return buf;
+}
+
+/** Melodia sintética (escala de Dó em C4–C5, notas de 0,6 s com pausa de 0,2 s) — formato de `GET …/pitch`. */
+function mockNotes(durationS) {
+  const scale = [60, 62, 64, 65, 67, 69, 71, 72];
+  const names = ["C4", "D4", "E4", "F4", "G4", "A4", "B4", "C5"];
+  const notes = [];
+  for (let t = 2, i = 0; t + 0.6 < durationS; t += 0.8, i++) {
+    const k = i % scale.length;
+    notes.push({ start: t, end: t + 0.6, midi: scale[k], note: names[k] });
+  }
+  return notes;
 }

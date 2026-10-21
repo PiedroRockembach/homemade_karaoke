@@ -133,12 +133,22 @@
               <svg class="icon" aria-hidden="true"><use href="#i-user" /></svg><span></span>
             </div>
           </div>
+          <div class="s-score" data-score hidden>
+            <span class="s-score-star">★</span>
+            <span class="s-score-lbl">Pontos</span>
+            <b class="s-score-num tnum" data-score-num>0</b>
+          </div>
           <div class="s-next" data-next hidden>
             <div class="lbl">A seguir</div>
             <div class="t" data-next-title></div>
             <div data-next-singer></div>
           </div>
         </div>
+        <div class="pitch-box" data-pitch-box hidden aria-hidden="true">
+          <canvas class="pitch-canvas" data-pitch-canvas></canvas>
+          <span class="pitch-oct" data-pitch-oct hidden></span>
+        </div>
+        <p class="pitch-note" data-pitch-note role="status" aria-live="polite" hidden></p>
         <div class="lyrics" data-lyrics aria-hidden="true"></div>
         <div class="nolyrics-box">
           <div class="err-ico muted" aria-hidden="true">
@@ -284,6 +294,16 @@
 
       <div class="sr-only" role="status" aria-live="polite" data-announce></div>
 
+      <!-- Resultado de pontuação final ao término da música (US-19) -->
+      <aside class="score-overlay" data-score-overlay hidden aria-hidden="true">
+        <div class="score-card-final">
+          <div class="score-card-star">★</div>
+          <h2 class="score-card-title">Pontuação Final</h2>
+          <div class="score-card-val tnum" data-score-final-val>0</div>
+          <p class="score-card-rank" data-score-final-rank>Excelente!</p>
+        </div>
+      </aside>
+
       <div class="help" data-help role="dialog" aria-modal="true" aria-labelledby="help-title" hidden
         tabindex="-1">
         <div class="help-card">
@@ -330,6 +350,14 @@
             <div>
               <dt><span class="s-key">A</span></dt>
               <dd>Auto-avanço liga/desliga</dd>
+            </div>
+            <div>
+              <dt><span class="s-key">S</span></dt>
+              <dd>Pontuação liga/desliga</dd>
+            </div>
+            <div>
+              <dt><span class="s-key">O</span></dt>
+              <dd>Régua de notas: oitava abaixo / acima / original</dd>
             </div>
             <div>
               <dt><span class="s-key">F</span></dt>

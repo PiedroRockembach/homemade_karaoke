@@ -2902,6 +2902,68 @@ body.has-modal {
   overflow-wrap: anywhere;
 }
 
+/* ADR-0006 — card do modo convidado: diagnósticos de rede e comando copiável */
+.gp-diag {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.gp-diag h3 {
+  margin: 0;
+}
+
+.gp-diag-list {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.gp-diag-list > .callout {
+  align-items: flex-start;
+  padding: var(--space-2) var(--space-3);
+}
+
+.gp-diag-list > .callout > .icon {
+  flex: none;
+  margin-top: 2px;
+}
+
+.gp-diag-body {
+  display: grid;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.gp-diag-body p {
+  margin: 0;
+}
+
+.gp-cmd {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-2);
+  margin-top: var(--space-1);
+  min-width: 0;
+}
+
+.gp-cmd code {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  background: var(--color-surface-2);
+  color: var(--color-text);
+  padding: 1px var(--space-1);
+  border-radius: var(--radius-sm);
+  overflow-wrap: anywhere;
+  user-select: all;
+}
+
+.gp-fw li + li {
+  margin-top: var(--space-1);
+}
+
 /* fila: "pedido por <nome>" (US-16) */
 .q-by {
   display: flex;
@@ -2929,4 +2991,28 @@ body.has-modal {
   .switch::after {
     transition: none;
   }
+}
+
+/* ADR-0005 — Configurações › Fontes de letra */
+.settings-sec + .settings-sec {
+  margin-top: var(--space-5);
+}
+.set-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+}
+.set-row .hint {
+  margin-top: var(--space-1);
+}
+.set-key {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+.set-key .input {
+  flex: 1 1 12rem;
+  min-width: 0;
 }

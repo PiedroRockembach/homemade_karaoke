@@ -18,6 +18,15 @@ TEST_PORT = 8765
 BASE_URL = f"http://127.0.0.1:{TEST_PORT}"
 
 
+@pytest.fixture(autouse=True)
+def _no_extra_lyrics_providers(monkeypatch):
+    """ADR-0005: nenhum teste fala com Vagalume/lyrics.ovh de verdade. Quem precisa dos provedores injeta
+    `app.state.lyrics_providers_factory` (ou `JobRunner(lyrics_providers_factory=...)`) com `httpx.MockTransport`."""
+    import karaoke.lyrics_providers as lp
+
+    monkeypatch.setattr(lp, "build_providers", lambda settings, transport=None: [])
+
+
 @pytest.fixture
 def config(tmp_path) -> Config:
     return Config(port=TEST_PORT, data_dir=tmp_path / "data", device="cpu", open_browser=False)

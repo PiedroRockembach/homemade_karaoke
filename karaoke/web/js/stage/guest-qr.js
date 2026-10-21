@@ -10,20 +10,22 @@
  * Dono: frontend-engineer (T-005, ciclo 20261005-0109).
  */
 
-const BETWEEN_SONGS = new Set(["idle", "ended", "up_next", "waiting_gesture"]);
 const RETRY_MS = 5000;
-const SCENE_SIZE = { start: "lg", idle: "lg", upnext: "sm", prep: "sm" };
+const SCENE_SIZE = { start: "lg", idle: "lg", upnext: "sm", prep: "sm", play: "mini" };
 
 /**
  * Onde/como mostrar o QR. Lógica pura (testada sem DOM).
  * @param {{enabled?: boolean, qr?: string|null}|null} guestState
  * @param {string|null|undefined} status `PlayerState.status` (ausente = idle)
  * @param {string} scene cena atual do Palco (start|idle|play|loading|upnext|prep|error)
- * @returns {"lg"|"sm"|null}
+ * @returns {"lg"|"sm"|"mini"|null}
  */
 export function qrPlacement(guestState, status, scene) {
   if (!guestState || !guestState.enabled || !guestState.qr) return null;
-  if (!BETWEEN_SONGS.has(status || "idle")) return null;
+  if (scene === "error") return null;
+  if (scene === "play" || status === "playing" || status === "paused") {
+    return "mini";
+  }
   return SCENE_SIZE[scene] || null;
 }
 
@@ -95,6 +97,7 @@ export class GuestQr {
     this.placement = placement;
     this.root.classList.toggle("has-qr", Boolean(placement));
     this.root.classList.toggle("qr-sm", placement === "sm");
+    this.root.classList.toggle("qr-mini", placement === "mini");
     this.box.setAttribute("aria-hidden", placement ? "false" : "true");
   }
 }

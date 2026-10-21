@@ -37,7 +37,35 @@ def default_settings(config: Config) -> dict[str, Any]:
         "long_video_warn_s": 900,
         "theme": "system",
         "lyrics_mode": "aligned",
+        "scoring_enabled": True,
+        "extra_lyrics_sources": True,  # ADR-0005: Vagalume + lyrics.ovh depois do LRCLIB
     }
+
+
+# ADR-0005: segredo gravado na tabela `settings`, mas fora de `default_settings` — nunca sai em respostas/eventos.
+VAGALUME_KEY = "vagalume_api_key"
+
+
+def read_vagalume_key(conn: sqlite3.Connection) -> str | None:
+    row = conn.execute("SELECT value_json FROM settings WHERE key = ?", (VAGALUME_KEY,)).fetchone()
+    if row is None:
+        return None
+    try:
+        v = json.loads(row["value_json"])
+    except ValueError:
+        return None
+    return v.strip() or None if isinstance(v, str) else None
+
+
+def get_lyrics_provider_settings(db: Database, config: Config) -> dict[str, Any]:
+    """Settings + a chave do Vagalume (uso interno de `lyrics_providers.build_providers`; nunca devolver na API)."""
+    conn = db.connect()
+    try:
+        out = read_settings(conn, config)
+        out[VAGALUME_KEY] = read_vagalume_key(conn)
+        return out
+    finally:
+        conn.close()
 
 
 def read_settings(conn: sqlite3.Connection, config: Config) -> dict[str, Any]:
@@ -47,6 +75,7 @@ def read_settings(conn: sqlite3.Connection, config: Config) -> dict[str, Any]:
             out[row["key"]] = json.loads(row["value_json"])
     if out["lyrics_mode"] not in ("aligned", "online"):  # `transcribe` = alias legado de `aligned` (CR-001)
         out["lyrics_mode"] = "aligned"
+    out["vagalume_api_key_set"] = read_vagalume_key(conn) is not None
     return out
 
 
@@ -60,6 +89,17 @@ def get_settings(db: Database, config: Config) -> dict[str, Any]:
 
 def write_settings(conn: sqlite3.Connection, patch: dict[str, Any]) -> None:
     for key, value in patch.items():
+        if key == VAGALUME_KEY:
+            key_value = value.strip() if isinstance(value, str) else ""
+            if key_value:
+                conn.execute(
+                    "INSERT INTO settings(key, value_json) VALUES (?, ?) "
+                    "ON CONFLICT(key) DO UPDATE SET value_json = excluded.value_json",
+                    (VAGALUME_KEY, json.dumps(key_value)),
+                )
+            else:
+                conn.execute("DELETE FROM settings WHERE key = ?", (VAGALUME_KEY,))
+            continue
         conn.execute(
             "INSERT INTO settings(key, value_json) VALUES (?, ?) "
             "ON CONFLICT(key) DO UPDATE SET value_json = excluded.value_json",
@@ -79,6 +119,9 @@ class SettingsPatch(BaseModel):
     long_video_warn_s: int | None = Field(default=None, ge=60, le=86400)
     theme: Literal["system", "light", "dark"] | None = None
     lyrics_mode: Literal["aligned", "transcribe", "online"] | None = None  # transcribe → gravado como aligned
+    scoring_enabled: bool | None = None
+    extra_lyrics_sources: bool | None = None
+    vagalume_api_key: str | None = Field(default=None, max_length=200)  # "" ou null → remove
 
 
 def update_settings(app: FastAPI, patch: dict[str, Any]) -> dict[str, Any]:
@@ -106,7 +149,7 @@ def get_settings_route(request: Request) -> dict:
 @router.patch("/api/settings")
 def patch_settings(body: SettingsPatch, request: Request) -> dict:
     patch = body.model_dump(exclude_unset=True)
-    nulls = [k for k, v in patch.items() if v is None]
+    nulls = [k for k, v in patch.items() if v is None and k != VAGALUME_KEY]
     if nulls:
         raise invalid_request("Valores nulos não são aceitos.", dict.fromkeys(nulls, "não pode ser null"))
     if not patch:

@@ -5,10 +5,10 @@ DENO   := $(VENV)/bin/deno
 PORT   ?= 8765
 WEB    := karaoke/web
 
-.PHONY: install start dev test test-all lint fmt doctor update-ytdlp clean help
+.PHONY: install start dev test test-all lint fmt doctor update-ytdlp firewall firewall-undo clean help
 
 help:
-	@echo "make install | start | dev | test | test-all | lint | fmt | doctor | update-ytdlp"
+	@echo "make install | start | dev | test | test-all | lint | fmt | doctor | update-ytdlp | firewall | firewall-undo"
 
 install:
 	bash scripts/install.sh
@@ -43,6 +43,12 @@ doctor:
 
 update-ytdlp:
 	$(PY) -m pip install -U "yt-dlp[default,deno]"
+
+firewall:
+	bash scripts/firewall-linux.sh --yes
+
+firewall-undo:
+	bash scripts/firewall-linux.sh --undo
 
 clean:
 	rm -rf .pytest_cache .ruff_cache build *.egg-info

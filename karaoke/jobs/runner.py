@@ -41,6 +41,7 @@ from karaoke.db import Database, next_id, utcnow
 from karaoke.jobs import models
 from karaoke.lyrics import align, builder
 from karaoke.lyrics.titleclean import clean_channel
+from karaoke.lyrics_providers import chain
 
 log = logging.getLogger("karaoke.jobs")
 
@@ -145,12 +146,14 @@ class JobRunner:
         app: FastAPI | None = None,
         lrclib_factory: Callable[[], lrclib.LrclibClient] | None = None,
         autostart: bool = True,
+        lyrics_providers_factory: Callable[[dict[str, Any]], list[Any]] | None = None,
     ):
         self.config = config
         self.db = db
         self.bus = bus
         self.app = app
         self._lrclib_factory = lrclib_factory
+        self._providers_factory = lyrics_providers_factory
         self.autostart = autostart
         self._wake = threading.Event()
         self._stop = threading.Event()
@@ -642,6 +645,20 @@ class JobRunner:
         )
         return (factory or lrclib.LrclibClient)()
 
+    def lyrics_providers(self) -> list[Any]:
+        """Fontes extras (ADR-0005) conforme as settings atuais; `app.state.lyrics_providers_factory` nos testes."""
+        from karaoke.api.settings import get_lyrics_provider_settings
+        from karaoke.lyrics_providers import build_providers
+
+        factory = self._providers_factory or (
+            getattr(self.app.state, "lyrics_providers_factory", None) if self.app is not None else None
+        )
+        try:
+            settings = get_lyrics_provider_settings(self.db, self.config)
+        except Exception:  # noqa: BLE001
+            settings = {"extra_lyrics_sources": True, "vagalume_api_key": None}
+        return (factory or build_providers)(settings)
+
     # ==== dispositivo / modelos ===========================================================================
     def devices(self) -> tuple[str, str]:
         """(device da separação, device do whisper)."""
@@ -977,6 +994,14 @@ class JobRunner:
             shutil.copyfile(work / "thumb.jpg", out / "thumb.jpg")
         if transcript is not None:
             save_transcript(out / TRANSCRIPT_FILE, transcript)
+        ctx.check()
+        try:
+            from karaoke.lyrics.pitch import extract_and_save_song_pitch
+
+            wav = stems / "vocals.wav"
+            extract_and_save_song_pitch(out, source=wav if wav.is_file() else None)
+        except Exception as e:
+            log.warning("Falha ao gerar pitch.json na finalização da música: %s", e)
         self._progress(ctx, 0.6)
         size = sum(f.stat().st_size for f in out.iterdir() if f.is_file() and f.suffix != ".json")
         ctx.check()
@@ -1057,25 +1082,48 @@ class JobRunner:
         return cands, None, None, res
 
     def _official_candidates(
-        self, ctx: _Ctx, song: sqlite3.Row, duration_ms: int | None, known: set[Any] | None = None
+        self,
+        ctx: _Ctx,
+        song: sqlite3.Row,
+        duration_ms: int | None,
+        known: set[Any] | None = None,
+        known_prints: set[str] | None = None,
     ) -> tuple[list[dict[str, Any]], int | None]:
-        """Busca no LRCLIB (cadeia de `lrclib.find_candidates`) → candidatas `lrclib`/`online_plain` (sem as de
-        `provider_id` em `known`) e o índice da melhor com tempos e duração aceitável. Sem rede: ([], None)."""
+        """Cadeia `lyrics_providers.chain.search_lyrics(exhaustive=False)`: LRCLIB e, sem registro de duração
+        aceitável, Vagalume → lyrics.ovh (ADR-0005) → candidatas `lrclib`/`online_plain` (sem as de `provider_id` em
+        `known`) e o índice da melhor com tempos e duração aceitável. Sem rede: ([], None)."""
         track = song["title"]
         artist = song["artist"] or clean_channel(song["channel"])
-        records: list[lrclib.LrcRecord] = []
         client = self.lrclib_client()
+        providers: list[Any] = []
         try:
-            records = lrclib.find_candidates(client, track, artist, duration_ms, song["original_title"])
-        except lrclib.LrclibNetworkError as exc:
-            log.info("LRCLIB indisponível (%s): sem letra oficial", exc)
+            providers = self.lyrics_providers()
+            found = chain.search_lyrics(
+                client,
+                providers,
+                track,
+                artist,
+                duration_ms,
+                song["original_title"],
+                exhaustive=False,
+                known=known,
+                known_prints=known_prints,
+                check=ctx.check,
+            )
         finally:
             with contextlib.suppress(Exception):
                 client.close()
+            chain.close_all(providers)
+        if found.lrclib_error is not None:
+            log.info(
+                "LRCLIB indisponível (%s): sem letra oficial do LRCLIB", type(found.lrclib_error).__name__
+            )
+        if found.status:
+            log.info("fontes de letra: %s", found.status)
         ctx.check()
         cands: list[dict[str, Any]] = []
         top: int | None = None
-        for rec in records:
+        for rec in found.records:
             if known and rec.id in known:
                 continue
             c = lrclib_candidate(rec, duration_ms)
@@ -1084,6 +1132,7 @@ class JobRunner:
             if top is None and c["source"] == "lrclib" and lrclib.acceptable(rec, duration_ms):
                 top = len(cands)
             cands.append(c)
+        cands += [chain.plain_candidate(p) for p in found.extra]  # ADR-0005: Vagalume/lyrics.ovh (só texto)
         return cands, top
 
     def _whisper(
@@ -1247,16 +1296,20 @@ class JobRunner:
         self._set_stage(ctx, "lyrics", None)
         conn = self.db.connect()
         try:
-            known = {
-                json.loads(r["meta_json"] or "{}").get("provider_id")
-                for r in conn.execute(
-                    "SELECT meta_json FROM lyrics_candidates WHERE song_id=? AND source IN ('lrclib','online_plain')",
-                    (ctx.song_id,),
-                )
-            }
+            known: set[Any] = set()
+            known_prints: set[str] = set()
+            for r in conn.execute(
+                "SELECT source, meta_json FROM lyrics_candidates WHERE song_id=? "
+                "AND source IN ('lrclib','online_plain','manual')",
+                (ctx.song_id,),
+            ):
+                meta = json.loads(r["meta_json"] or "{}")
+                if r["source"] != "manual":
+                    known.add(meta.get("provider_id"))
+                known_prints.add(chain.fingerprint(meta.get("preview") or []))
         finally:
             conn.close()
-        found, _ = self._official_candidates(ctx, song, song["duration_ms"], known)
+        found, _ = self._official_candidates(ctx, song, song["duration_ms"], known, known_prints)
         bases = text_base_order(found, song["duration_ms"], song["title"])
         self._write(ctx, force=True, lyrics_source="aligned" if bases else "whisper")
         res = self._song_transcript(ctx, song, options.get("language"), work)
@@ -1483,6 +1536,8 @@ def aligned_candidate(
             "artist_name": meta.get("artist_name"),
             "album_name": meta.get("album_name"),
             "provider_id": meta.get("provider_id"),
+            "provider": meta.get("provider")
+            or ("lrclib" if base.get("source") in ("lrclib", "online_plain") else None),
             "duration_ms": meta.get("duration_ms"),
             "model": res.get("model"),
             "language": res.get("language"),
@@ -1538,6 +1593,7 @@ def lrclib_candidate(rec: lrclib.LrcRecord, duration_ms: int | None) -> dict[str
             "artist_name": rec.artist_name,
             "album_name": rec.album_name,
             "provider_id": rec.id,
+            "provider": "lrclib",
             "duration_ms": rec.duration_ms,
             "model": None,
         },

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+
 import pytest
 
 from tests.api.core_helpers import SONG_A, SONG_B, SONG_C, Actor, seed_job, seed_song
@@ -224,3 +226,37 @@ def test_delete_song_with_running_job_does_not_block(client, app, monkeypatch):
         if proc.poll() is None:
             proc.kill()
             proc.wait()
+
+
+def test_get_song_pitch(client, app):
+    seed_song(app, SONG_A, files=True)
+    # Sem vocals.opus, retorna lista vazia
+    r = client.get(f"/api/songs/{SONG_A}/pitch")
+    assert r.status_code == 200
+    assert r.json() == {"song_id": SONG_A, "notes": []}
+
+    # Com pitch.json gravado, retorna as notas
+    song_dir = app.state.config.songs_dir / SONG_A
+    notes_data = [{"start": 1.0, "end": 2.0, "midi": 60, "note_name": "C4", "note": "C4", "text": "La"}]
+    (song_dir / "pitch.json").write_text(json.dumps({"version": 2, "notes": notes_data}), encoding="utf-8")
+
+    r2 = client.get(f"/api/songs/{SONG_A}/pitch")
+    assert r2.status_code == 200
+    assert r2.json() == {"song_id": SONG_A, "notes": notes_data}
+
+
+def test_get_song_pitch_unknown_song_404(client):
+    r = client.get(f"/api/songs/{SONG_B}/pitch")
+    assert r.status_code == 404
+    assert r.json()["error"]["code"] == "song_not_found"
+
+
+def test_get_song_pitch_corrupt_vocals_returns_empty(client, app):
+    """vocals.opus ilegível (ou ffmpeg falhando) não vira 500: notes: [] e cache do vazio."""
+    seed_song(app, SONG_A, files=True)
+    song_dir = app.state.config.songs_dir / SONG_A
+    (song_dir / "vocals.opus").write_bytes(b"isto nao e audio")
+    r = client.get(f"/api/songs/{SONG_A}/pitch")
+    assert r.status_code == 200
+    assert r.json() == {"song_id": SONG_A, "notes": []}
+    assert json.loads((song_dir / "pitch.json").read_text()) == {"version": 2, "notes": [], "failed": True}

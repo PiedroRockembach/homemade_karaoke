@@ -1,0 +1,3 @@
+{"type": "exact", "art": {"id": "a1b2c3", "name": "Banda Teste", "url": "https://www.vagalume.com.br/banda-teste/"},
+ "mus": [{"id": "m9x8y7", "name": "Canção de Exemplo", "lang": 1,
+  "text": "Linha um da canção de teste\nSegunda linha inventada\nTerceira linha de exemplo\nQuarta linha fictícia"}]}
