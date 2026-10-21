@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Karaokê
+Comment=Karaokê local (YouTube + letra sincronizada)
+Exec=karaoke
+Icon=karaoke
+Terminal=true
+Categories=AudioVideo;Audio;

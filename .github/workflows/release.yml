@@ -1,0 +1,111 @@
+# Release automático: todo push na main gera v<versão do pyproject>-build.<nº da execução>, marcado como Latest,
+# com os instaladores Linux (.run e .deb), Windows (.exe) e SHA256SUMS. Detalhes: README, "Como gerar um release".
+name: Release
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4.2.2
+      - uses: actions/setup-python@v5.6.0
+        with:
+          python-version: "3.12"
+      - name: Ferramentas de lint (leves, sem torch)
+        run: python -m pip install "ruff==0.16.10" "deno==2.9.7"
+      - run: ruff check .
+      - run: ruff format --check .
+      - run: deno lint karaoke/web
+      - run: deno fmt --check karaoke/web
+
+  build-linux:
+    needs: lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4.2.2
+      - uses: actions/setup-python@v5.6.0
+        with:
+          python-version: "3.12"
+      - name: Gerar .run e .deb
+        env:
+          KARAOKE_BUILD: ${{ github.run_number }}
+        run: bash packaging/build-linux.sh
+      - name: Conferir o .deb
+        run: dpkg-deb --info dist/*.deb && dpkg-deb --contents dist/*.deb | head -n 20
+      - uses: actions/upload-artifact@v4.6.2
+        with:
+          name: linux
+          path: |
+            dist/*.run
+            dist/*.deb
+          if-no-files-found: error
+
+  build-windows:
+    needs: lint
+    runs-on: windows-latest
+    steps:
+      # Os arquivos rodam dentro do WSL: checkout com LF (os .bat/.ps1 continuam CRLF pelo .gitattributes).
+      - run: git config --global core.autocrlf false
+      - uses: actions/checkout@v4.2.2
+      - uses: actions/setup-python@v5.6.0
+        with:
+          python-version: "3.12"
+      - run: python -m pip install "pillow==11.3.0"
+      - name: Inno Setup
+        shell: pwsh
+        run: |
+          if (-not (Test-Path "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe")) { choco install innosetup -y --no-progress }
+      - name: Gerar o instalador .exe
+        shell: pwsh
+        env:
+          KARAOKE_BUILD: ${{ github.run_number }}
+        run: ./packaging/build-windows.ps1
+      - uses: actions/upload-artifact@v4.6.2
+        with:
+          name: windows
+          path: dist/*.exe
+          if-no-files-found: error
+
+  release:
+    needs: [build-linux, build-windows]
+    # Disparo manual em outra branch só gera os instaladores (artefatos do run), sem publicar release.
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4.2.2
+      - uses: actions/download-artifact@v4.3.0
+        with:
+          path: release
+          merge-multiple: true
+      - name: Publicar o release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_NUMBER: ${{ github.run_number }}
+        run: |
+          set -euo pipefail
+          version="$(python3 packaging/stage.py --version)"
+          full="$version-build.$RUN_NUMBER"
+          tag="v$full"
+          (cd release && sha256sum -- * > SHA256SUMS && cat SHA256SUMS)
+          bash packaging/release-notes.sh "$version" "$full" "$GITHUB_SHA" > notes.md
+          if gh release view "$tag" >/dev/null 2>&1; then
+            # Re-execução do mesmo run: só substitui os arquivos.
+            gh release upload "$tag" release/* --clobber
+          else
+            gh release create "$tag" release/* --target "$GITHUB_SHA" --title "Karaokê $full" \
+              --notes-file notes.md --latest
+          fi
+          echo "### Release $tag publicado" >> "$GITHUB_STEP_SUMMARY"

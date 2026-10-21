@@ -4,6 +4,15 @@ Formato baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). 
 
 ## [Não lançado]
 
+### Adicionado (release)
+- **Release automático no GitHub**: cada push na `main` publica `v<versão>-build.<n>` (Latest) com lint antes e
+  os instaladores `karaoke-<versão>-windows-setup.exe` (Inno Setup, sem administrador, prepara o WSL),
+  `karaoke_<versão>_all.deb` (Ubuntu/Debian) e `karaoke-<versão>-linux.run` (qualquer Linux, sem sudo), mais
+  `SHA256SUMS`. Todos criam o atalho na área de trabalho e no menu; atualizar mantém o `.venv` e os dados, e
+  desinstalar pergunta antes de apagar as músicas. Scripts em `packaging/`.
+- **`karaoke.sh`** lê `karaoke.env` (criado pelos instaladores para apontar `KARAOKE_DATA_DIR`), e o atalho criado
+  por `--criar-atalho` passa a usar o ícone `karaoke_icon.png`.
+
 ### Alterado
 - **Indicador de voz fiel**: o ponto da régua mostra a altura real cantada (sem dobrar de oitava), com leitura
   suavizada: não treme em nota longa, acompanha vibrato e glissando e descarta saltos falsos de oitava.

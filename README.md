@@ -25,7 +25,49 @@ A app tem duas telas no navegador:
 
 Não é preciso sudo nem instalar nada global além do ffmpeg: tudo fica dentro desta pasta.
 
-## Instalar
+## Instalar pelo release (recomendado)
+
+Cada push na `main` publica um release em
+[Releases](https://github.com/PiedroRockembach/homemade_karaoke/releases/latest) com a versão
+`v<versão>-build.<n>` e três instaladores (confira com `SHA256SUMS`). Eles são leves: copiam a app e, na
+instalação ou na 1ª abertura, baixam as dependências (~7 GB: PyTorch, Demucs, Whisper).
+
+| Sistema | Arquivo | Como instalar |
+|---|---|---|
+| Windows 10/11 | `karaoke-<versão>-windows-setup.exe` | Dois cliques. Não pede administrador. |
+| Ubuntu/Debian (24.04+ / 13+) | `karaoke_<versão>_all.deb` | `sudo apt install ./karaoke_<versão>_all.deb` |
+| Qualquer Linux, sem sudo | `karaoke-<versão>-linux.run` | `chmod +x karaoke-*-linux.run && ./karaoke-*-linux.run` |
+
+Todos criam o atalho **Karaokê** na área de trabalho e no menu. Clique nele para abrir.
+
+- **Windows**: instala em `%LOCALAPPDATA%\Programs\Karaoke`. No fim, a opção *Preparar o WSL* confere o WSL
+  (sem ele, oferece `wsl --install`, que pede administrador e reinício), instala `make`, `python3`, `python3-venv` e
+  `ffmpeg` dentro do WSL e oferece a 1ª instalação. Na 1ª abertura o karaokê oferece liberar a rede para os celulares
+  dos convidados (também no menu Iniciar: *Configurar rede dos convidados*). Os dados ficam em `...\Karaoke\data`.
+- **.run**: instala em `~/.local/share/karaoke/app`, dados em `~/.local/share/karaoke/data` e o comando `karaoke`
+  em `~/.local/bin`. Precisa de `python3` (3.12+), `python3-venv`, `make` e `ffmpeg`; o instalador diz o que falta.
+  Opções: `--yes` (sem perguntas), `--no-shortcut`, `--help`. Com `KARAOKE_SKIP_DEPS=1` ele só copia a app, e o
+  `make install` roda na 1ª abertura.
+- **.deb**: o código fica em `/opt/karaoke` e o comando é `karaoke`. Na 1ª abertura, cada usuário recebe sua cópia em
+  `~/.local/share/karaoke/app` (com o `.venv`), os dados em `~/.local/share/karaoke/data` e o atalho na área de
+  trabalho.
+
+**Atualizar**: baixe e rode o instalador novo (ou `sudo apt install ./karaoke_<nova>_all.deb`). O `.venv` e os dados
+são mantidos; na abertura seguinte o `make install` confere as dependências, o que é rápido se nada mudou.
+
+**Desinstalar**:
+
+- **Windows**: *Configurações > Aplicativos > Karaoke > Desinstalar* (ou o item do menu Iniciar). Ele oferece desfazer
+  a configuração de rede, apaga o `.venv` e **pergunta** antes de apagar `data\` (o padrão é manter).
+- **.run**: `~/.local/share/karaoke/uninstall.sh` (ou `./karaoke-*-linux.run --uninstall`). Pergunta antes de apagar os
+  dados; `--purge` apaga sem perguntar.
+- **.deb**: `sudo apt remove karaoke`. Os arquivos por usuário ficam. Para liberar os ~7 GB do ambiente, rode
+  `rm -rf ~/.local/share/karaoke/app ~/Desktop/karaoke.desktop`. Seus dados ficam em `~/.local/share/karaoke/data`.
+
+Use **só um** dos dois no Linux (.run ou .deb): eles usam a mesma pasta por usuário e, com os dois, o comando
+`karaoke` do .run (em `~/.local/bin`) passa na frente do `/usr/bin/karaoke` do .deb.
+
+## Instalar a partir do código
 
 ```sh
 make install
@@ -529,7 +571,26 @@ Testes de navegador (Playwright, usam o Chrome/Chromium instalado no sistema):
 Arquitetura e decisões: `docs/ARCHITECTURE.md`, `docs/adr/`, contratos da API em `docs/contracts/`, design em
 `docs/DESIGN.md`.
 
+### Como gerar um release
+
+O workflow [`.github/workflows/release.yml`](.github/workflows/release.yml) roda a cada push na `main` (ou em
+*Actions > Release > Run workflow*): lint (`ruff` + `deno`), depois os instaladores Linux (`ubuntu-latest`) e Windows
+(`windows-latest`, Inno Setup) em paralelo e, se tudo passar, `gh release create v<versão>-build.<n>` como *Latest*. A
+versão vem do `pyproject.toml`, `<n>` é o número da execução e as notas saem de `[Não lançado]` no `CHANGELOG.md`
+(ou da seção da versão). Só usa o `GITHUB_TOKEN`. Para mudar a versão, edite `version` no `pyproject.toml`.
+
+Para gerar os instaladores localmente (vão para `dist/`):
+
+```sh
+bash packaging/build-linux.sh                 # .run e .deb (KARAOKE_BUILD=7 muda o nº do build)
+pwsh packaging/build-windows.ps1              # .exe, no Windows com Inno Setup 6 e `pip install pillow`
+```
+
+Os pacotes levam só arquivos versionados no Git (nunca `.venv/`, `data/`, caches, testes nem `packaging/`).
+
 ## Desinstalar
+
+Instalou pelo release? Veja [Instalar pelo release](#instalar-pelo-release-recomendado). A partir do código:
 
 1. Pare a app (`Ctrl+C`).
    No Windows, se você rodou `--configurar-rede`, desfaça antes: `karaoke.bat --desfazer-rede`. No Linux: `make firewall-undo`.

@@ -1,0 +1,15 @@
+Package: karaoke
+Version: @VERSION@
+Section: sound
+Priority: optional
+Architecture: all
+Installed-Size: @SIZE@
+Depends: python3 (>= 3.12), python3-venv, ffmpeg, make
+Maintainer: PiedroRockembach <PiedroRockembach@users.noreply.github.com>
+Homepage: https://github.com/PiedroRockembach/homemade_karaoke
+Description: Karaoke local: YouTube, voz separada por IA e letra sincronizada
+ Escolha uma musica do YouTube e cante. A app separa a voz do instrumental e
+ mostra a letra sincronizada no navegador (Controle no PC, Palco na TV).
+ .
+ Na primeira abertura, o comando "karaoke" cria o ambiente do usuario em
+ ~/.local/share/karaoke (baixa ~7 GB: PyTorch, Demucs, Whisper).

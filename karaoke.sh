@@ -6,11 +6,14 @@
 set -uo pipefail
 DIR="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
 cd "$DIR" || exit 1
+# Instalado pelo .run/.deb: karaoke.env (ao lado deste script) define KARAOKE_DATA_DIR. No clone não existe.
+if [[ -f "$DIR/karaoke.env" ]]; then set -a; . "$DIR/karaoke.env"; set +a; fi
 
 pausa() { [[ -t 0 ]] && read -rp "Aperte Enter para fechar..." _; }
 
 criar_atalho() {
-  local desk apps entry
+  local desk apps entry icon=multimedia-audio-player
+  [[ -f "$DIR/karaoke_icon.png" ]] && icon="$DIR/karaoke_icon.png"
   desk="$(xdg-user-dir DESKTOP 2>/dev/null || echo "$HOME/Desktop")"
   apps="$HOME/.local/share/applications"
   mkdir -p "$apps" "$desk"
@@ -20,7 +23,7 @@ Name=Karaokê
 Comment=Karaokê local (YouTube + letra sincronizada)
 Exec=\"$DIR/karaoke.sh\"
 Path=$DIR
-Icon=multimedia-audio-player
+Icon=$icon
 Terminal=true
 Categories=AudioVideo;Audio;"
   printf '%s\n' "$entry" > "$apps/karaoke.desktop"
